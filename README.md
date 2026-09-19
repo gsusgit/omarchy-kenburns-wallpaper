@@ -1,7 +1,7 @@
 # Animated Wallpaper
 
-A wallpaper that is faintly **alive**: the image itself drifts, a band of light crosses it, dust floats.
-Nothing moves *on top of* your windows — it all happens behind them.
+A wallpaper that is faintly **alive**: the image itself drifts, very slowly. Nothing is painted on
+top of it — no haze, no light, no particles, just the picture moving.
 
 Omarchy 4 (Quattro) plugin, Quickshell + QML.
 
@@ -14,8 +14,6 @@ Everything is scaled by a single dial: `motion` (`0.02` = the shipped 2%).
 | Ken Burns zoom | 1.000 → 1.070 | 34 s |
 | Pan | up to ±44 px, tied to the zoom slack | 47 s |
 | Exposure | 0 → 2.5 % darker, then back | 22 s |
-| Glint (a band of light crossing) | 0 → 7 % alpha | 42 s |
-| Motes (dust in the light) | 26 specks, ≤8 % alpha | 40–80 s rise |
 
 **Speed is what makes motion visible, not size.** The first version moved 2 % over 90 s — that is
 0.7 px/s at the screen edge, and no eye catches it. The current preset moves the image edge at
@@ -42,7 +40,7 @@ because that is the only way the image itself can move. Two consequences worth k
 | wl-layer-shell layer | Who paints there |
 |---|---|
 | background | `omarchy.background` — the stock wallpaper (now only a fallback) |
-| **bottom** | **this plugin — the wallpaper copy, the glint, the motes** |
+| **bottom** | **this plugin — the wallpaper copy, moving** |
 | top | the bar |
 | overlay | menus, OSD, notifications |
 
@@ -79,12 +77,10 @@ The knobs are the `readonly` properties at the top of `Service.qml`:
 | `panPeriodMs` | `47000` | one pan orbit |
 | `panAmount` | `0.65` | fraction of the zoom slack the pan uses; 1.0 is the safe maximum |
 | `exposureDepth` / `exposurePeriodMs` | `0.025` / `22000` | the room-light breath |
-| `glintOpacity` / `glintPeriodMs` | `0.07` / `42000` | the travelling light band |
-| `moteCount` / `moteAlpha` | `26` / `0.08` | the dust |
 | `frameMs` | `70` | repaint interval (~14 fps); `140` = ~7 fps, still smooth |
 | `revealMs` | `420` | wallpaper-change reveal (matches Omarchy) |
 
-To calm it down without killing it: `motion: 0.04`, `glintOpacity: 0.04`, `moteAlpha: 0.05`.
+To calm it down: `motion: 0.04`.
 
 If the fine detail of a busy illustration shimmers (sub-pixel resampling on stippled line art),
 lengthen `panPeriodMs`, raise `scalePeriodMs` or lower `motion` — that shimmer is the price of a
@@ -124,6 +120,5 @@ delegates it can see, so a separate component silently gets an undefined screen 
 | 0.1 | accent-tinted glow breathing over the wallpaper |
 | 0.2 | the plugin paints the wallpaper itself, so the image can move (Ken Burns + pan + exposure) |
 | 0.3 | amplitudes and speeds raised: 2 % over 90 s (0.7 px/s) was invisible, so it became 7 % over 34 s (~6 px/s) |
-| 0.4 | the 0.1 glow removed — a static coloured haze fought the moving image. The glint (a band of light crossing) took over its job of putting light in the scene |
-
-`glow.png` / `make-glow.py` survive because the motes still use that texture.
+| 0.4 | the 0.1 glow removed — a static coloured haze fought the moving image |
+| 0.5 | everything additive gone: the glint band and the motes too. The image moving is the entire effect; `glow.png` and `make-glow.py` were deleted with them |

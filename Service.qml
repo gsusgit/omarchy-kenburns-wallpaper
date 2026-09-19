@@ -45,16 +45,11 @@ Item {
   readonly property real panAmount: 0.65       // fraction of the zoom slack the pan uses
   readonly property real exposureDepth: 0.025  // room-light breath
   readonly property int exposurePeriodMs: 22000
-  readonly property real moteAlpha: 0.08
-  readonly property int moteCount: 26
-  readonly property real glintOpacity: 0.07    // travelling light band
-  readonly property int glintPeriodMs: 42000
   readonly property int revealMs: 420          // Omarchy's own reveal duration
 
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateDir: home + "/.local/state/omarchy/current"
   readonly property string currentLink: stateDir + "/background"
-  readonly property color accent: Color.accent !== undefined ? Color.accent : "#ffffff"
 
   // ---------------------------------------------------------------- values
   function wave(periodMs) {
@@ -74,9 +69,6 @@ Item {
   readonly property real panUnitY: panAmount * root.orbit(panPeriodMs * 0.8, 1.6)
 
   readonly property real exposure: exposureDepth * root.wave(exposurePeriodMs)
-
-  readonly property real glintSweep: (clock % glintPeriodMs) / glintPeriodMs
-  readonly property real glint: glintOpacity * Math.sin(Math.PI * glintSweep)
 
   property real clock: 0
   Timer {
@@ -181,9 +173,8 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    console.log("[animated-wallpaper] ready v0.4: screens=" + Quickshell.screens.length
-      + " motion=" + root.motion + " scalePeriodMs=" + root.scalePeriodMs
-      + " accent=" + root.accent)
+    console.log("[animated-wallpaper] ready v0.5: screens=" + Quickshell.screens.length
+      + " motion=" + root.motion + " scalePeriodMs=" + root.scalePeriodMs)
   }
 
   Variants {
@@ -302,54 +293,9 @@ Item {
         }
       }
 
-      // --------------------------------------------------- ambient light
-      // Glint: a wide, faint band of accent light crossing the screen every
-      // 42 s. Faded in and out by sin(), so it never pops at the edges.
-      // (The v0.1 accent bloom is gone: it fought the wallpaper instead of
-      // moving with it. glow.png is still the motes' texture.)
-      Rectangle {
-        id: glint
-        width: win.width * 0.5
-        height: win.height
-        x: -width + (win.width + width) * root.glintSweep
-        opacity: root.glint
-        visible: opacity > 0.002
-        gradient: Gradient {
-          orientation: Gradient.Horizontal
-          GradientStop { position: 0.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.0) }
-          GradientStop { position: 0.5; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 1.0) }
-          GradientStop { position: 1.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.0) }
-        }
-      }
-
-      // Motes: dust in the light. Positions come from the same clock -- no
-      // particle system, because Qt's particle system drives its own frame
-      // ticker and would cost several times the repaints.
-      Repeater {
-        model: root.moteCount
-
-        Item {
-          id: mote
-          required property int index
-
-          readonly property real seed: (index * 0.6180339887) % 1
-          readonly property real period: 40000 + seed * 40000
-          readonly property real t: ((root.clock + seed * 90000) % period) / period
-          readonly property real size: (60 + seed * 120) * (win.width / 1920)
-
-          width: size
-          height: size
-          x: seed * win.width + win.width * 0.04 * Math.sin(2 * Math.PI * (t + seed)) - size / 2
-          y: win.height * (1.08 - 1.16 * t)
-          opacity: root.moteAlpha * Math.sin(Math.PI * t)
-
-          Image {
-            anchors.fill: parent
-            source: Qt.resolvedUrl("glow.png")
-            fillMode: Image.PreserveAspectFit
-          }
-        }
-      }
+      // Nothing is painted on top of the wallpaper any more: the v0.1 accent
+      // bloom, the v0.3 glint band and the motes are all gone. The image is
+      // the entire effect -- it moves, and that is all.
 
       // Exposure: the whole picture darkens a little and comes back, like the
       // light in the room changing. Topmost, so it grades everything.
