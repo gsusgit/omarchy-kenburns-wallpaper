@@ -44,7 +44,7 @@ Panel {
   // The zoom index runs low-to-high (1.10 to 1.30); the speed index is inverted
   // against the loop period it writes, because a short loop is the fast one.
   readonly property int zoomIndex: Settings.maxZoomLevelIndex(root.draft.maxZoom)
-  readonly property int speedIndex: Settings.speedLevelIndex(root.draft.duration)
+  readonly property int speedIndex: Settings.speedLevelIndex(root.draft.speed)
 
   // Compare canonically: two configs that differ only in key order or in a
   // numeric type are the same settings, and should not light up "unsaved".
@@ -267,7 +267,7 @@ Panel {
             tooltipText: "Slower"
             foreground: root.barForeground
             enabled: root.speedIndex > 0
-            onClicked: root.edit("duration", Settings.durationForSpeedIndex(root.speedIndex - 1))
+            onClicked: root.edit("speed", Settings.durationForSpeedIndex(root.speedIndex - 1))
           }
 
           PanelSlider {
@@ -279,7 +279,7 @@ Panel {
             integer: true
             tickCount: Settings.DURATION_LEVELS.length
             value: root.speedIndex
-            onMoved: function(i) { root.edit("duration", Settings.durationForSpeedIndex(i)) }
+            onMoved: function(i) { root.edit("speed", Settings.durationForSpeedIndex(i)) }
           }
 
           PanelActionButton {
@@ -289,7 +289,7 @@ Panel {
             tooltipText: "Faster"
             foreground: root.barForeground
             enabled: root.speedIndex < Settings.DURATION_LEVELS.length - 1
-            onClicked: root.edit("duration", Settings.durationForSpeedIndex(root.speedIndex + 1))
+            onClicked: root.edit("speed", Settings.durationForSpeedIndex(root.speedIndex + 1))
           }
         }
 

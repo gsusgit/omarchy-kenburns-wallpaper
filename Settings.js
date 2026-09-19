@@ -78,16 +78,16 @@ function driftVector(value) {
 
 var DEFAULTS = {
   enabled: true,
-  duration: 20.0,
+  speed: 40.0,
   maxZoom: 1.15,
   drift: "center"
 }
 
-// The duration is one of five levels, not a free number. Both it and the zoom are
-// walked with a stepper, and a control with five positions cannot represent an
-// arbitrary value -- so anything else (a hand-edited file, an IPC call, a file from
-// an older schema) is snapped to the nearest level, ties going up. File, panel and
-// engine therefore always agree on which level is selected.
+// The key is `speed` -- that is what the panel calls it -- and its value is the
+// loop PERIOD in seconds, so a smaller number is faster. The five levels below are
+// therefore periods too, and the helpers keep the honest name: DURATION_LEVELS are
+// the periods, and the panel addresses them through a speed index that runs the
+// other way (see speedLevelIndex).
 var DURATION_LEVELS = [20, 30, 40, 50, 60]
 
 // The zoom's five levels. They end at 1.30 on purpose: that is the hard cap, above
@@ -96,7 +96,7 @@ var DURATION_LEVELS = [20, 30, 40, 50, 60]
 var MAXZOOM_LEVELS = [1.10, 1.15, 1.20, 1.25, 1.30]
 
 var LIMITS = {
-  duration: { min: DURATION_LEVELS[0], max: DURATION_LEVELS[DURATION_LEVELS.length - 1] },
+  speed: { min: DURATION_LEVELS[0], max: DURATION_LEVELS[DURATION_LEVELS.length - 1] },
   maxZoom: { min: MAXZOOM_LEVELS[0], max: MAXZOOM_LEVELS[MAXZOOM_LEVELS.length - 1] }
 }
 
@@ -122,9 +122,17 @@ function levelIndexOf(levels, value, fallback) {
   return 0
 }
 
-function snapDuration(value) { return snapToLevel(DURATION_LEVELS, value, DEFAULTS.duration) }
+function snapSpeed(value) { return snapToLevel(DURATION_LEVELS, value, DEFAULTS.speed) }
 
-function durationLevelIndex(value) { return levelIndexOf(DURATION_LEVELS, value, DEFAULTS.duration) }
+// The key was called `duration` until 3.4. A file written before that still works
+// -- its value is read as the speed -- and the next write stores it under the new
+// name only, so the file migrates itself.
+function readSpeed(input) {
+  var raw = (input.speed !== undefined) ? input.speed : input.duration
+  return snapToLevel(DURATION_LEVELS, raw, DEFAULTS.speed)
+}
+
+function durationLevelIndex(value) { return levelIndexOf(DURATION_LEVELS, value, DEFAULTS.speed) }
 
 // The panel calls this control SPEED while the value underneath is a loop period,
 // so the two run in opposite directions: the fastest setting is the SHORTEST
@@ -133,12 +141,12 @@ function durationLevelIndex(value) { return levelIndexOf(DURATION_LEVELS, value,
 // walk, so "more" always means faster and "less" always means slower, and the
 // slider's right end is the quick one.
 function speedLevelIndex(value) {
-  return DURATION_LEVELS.length - 1 - levelIndexOf(DURATION_LEVELS, value, DEFAULTS.duration)
+  return DURATION_LEVELS.length - 1 - levelIndexOf(DURATION_LEVELS, value, DEFAULTS.speed)
 }
 
 function durationForSpeedIndex(index) {
   var n = typeof index === "number" ? index : parseFloat(index)
-  if (!isFinite(n)) return DEFAULTS.duration
+  if (!isFinite(n)) return DEFAULTS.speed
   var i = clamp(Math.round(n), 0, DURATION_LEVELS.length - 1)
   return DURATION_LEVELS[DURATION_LEVELS.length - 1 - i]
 }
@@ -177,7 +185,7 @@ function sanitize(raw) {
   var input = (raw && typeof raw === "object") ? raw : {}
   return {
     enabled: bool(input.enabled, DEFAULTS.enabled),
-    duration: snapDuration(input.duration),
+    speed: readSpeed(input),
     maxZoom: snapMaxZoom(input.maxZoom),
     drift: normaliseDrift(input.drift)
   }

@@ -104,7 +104,7 @@ Item {
   // assertions in tests/persist.test.sh drive a real write + reload round trip.
   //
   // One function per key rather than a generic set(key, value): the CLI reads
-  // better (`qs ipc call animated-wallpaper setDuration 45`) and a typo in the
+  // better (`qs ipc call animated-wallpaper setSpeed 50`) and a typo in the
   // key cannot reach the config. Note when linting: use /usr/lib/qt6/bin/qmllint
   // -- the /usr/bin/qmllint on this box is Qt5's (5.15) and crashes silently
   // (exit 255, no message) on Quickshell's Qt6 types.
@@ -122,7 +122,7 @@ Item {
     target: "animated-wallpaper"
 
     function setEnabled(value: string): void { root.applyIpc("enabled", value) }
-    function setDuration(value: string): void { root.applyIpc("duration", value) }
+    function setSpeed(value: string): void { root.applyIpc("speed", value) }
     function setMaxZoom(value: string): void { root.applyIpc("maxZoom", value) }
     function setDrift(value: string): void { root.applyIpc("drift", value) }
 
@@ -206,7 +206,7 @@ Item {
   // quarters of the loop going out and a quarter coming back, which made the
   // return three times quicker than the outbound leg and read as a jump at the end
   // of the move (reported from the desktop). Equal halves are the fix.
-  readonly property real cycleMs: Math.max(1000, config.duration * 1000)
+  readonly property real cycleMs: Math.max(1000, config.speed * 1000)
   readonly property int loopIndex: Math.floor(clock / cycleMs)
   readonly property real segment: Math.max(0, Math.min(1, (clock % cycleMs) / cycleMs))
 
