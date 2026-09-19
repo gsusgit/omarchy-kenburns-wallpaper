@@ -44,13 +44,13 @@ check "serialise round-trips canonically" \
   '{"enabled":true,"duration":20,"maxZoom":1.3,"mode":"horizontal","smoothEasing":true,"pauseAtEnd":2}' \
   "$(run 'JSON.parse(S.serialise({maxZoom: 4, mode: "HORIZONTAL"}))')"
 check "a fixed mode is returned as-is" '["zoomIn","vertical"]' \
-  "$(run 'JSON.stringify([S.variantForPair(3,"zoomIn"), S.variantForPair(9,"vertical")])')"
+  "$(run '[S.variantForPair(3,"zoomIn"), S.variantForPair(9,"vertical")]')"
 check "random variant is deterministic per pair" 'true' \
-  "$(run 'JSON.stringify([0,1,2,3,4,5,6,7,8].every(function(i){return S.variantForPair(i,"random")===S.variantForPair(i,"random")}))')"
+  "$(run '[0,1,2,3,4,5,6,7,8].every(function(i){return S.variantForPair(i,"random")===S.variantForPair(i,"random")})')"
 check "random variant is always one of the four" 'true' \
-  "$(run 'JSON.stringify([0,1,2,3,4,5,6,7,8,9,10,11].every(function(i){return ["zoomIn","zoomOut","horizontal","vertical"].indexOf(S.variantForPair(i,"random"))>=0}))')"
+  "$(run '[0,1,2,3,4,5,6,7,8,9,10,11].every(function(i){return ["zoomIn","zoomOut","horizontal","vertical"].indexOf(S.variantForPair(i,"random"))>=0})')"
 check "random variant covers all four variants" '4' \
-  "$(run 'JSON.stringify([...new Set([...Array(16).keys()].map(function(i){return S.variantForPair(i,"random")}))].length)')"
+  "$(run 'new Set([...Array(16).keys()].map(function(i){return S.variantForPair(i,"random")})).size')"
 
 (( fails == 0 )) && echo "settings tests: OK" || echo "settings tests: FAILED ($fails)"
 exit $(( fails > 0 ))
