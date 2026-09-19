@@ -4,6 +4,8 @@ An [Omarchy](https://omarchy.org) plugin that paints a slow Ken Burns loop on th
 current wallpaper: the image itself zooms and drifts. Nothing is drawn on top of
 it.
 
+![Ken Burns Wallpaper](preview.png)
+
 ## Features
 
 - Cosine zoom from 1× out to a chosen maximum and back, with no stop and no jump
