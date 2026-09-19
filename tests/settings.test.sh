@@ -43,6 +43,32 @@ check "garbage text parses to the defaults" "$DEFAULT" "$(run 'S.parse("not json
 check "serialise round-trips canonically" \
   '{"enabled":true,"duration":20,"maxZoom":1.3,"mode":"horizontal","smoothEasing":true,"pauseAtEnd":2}' \
   "$(run 'JSON.parse(S.serialise({maxZoom: 4, mode: "HORIZONTAL"}))')"
+# The panel's "unsaved changes" flag is `serialise(draft) != serialise(applied)`,
+# so equality has to be canonical: same values written differently are NOT a
+# change, or the warning would light up on an untouched panel.
+check "equal configs compare equal through serialise" 'true' \
+  "$(run 'S.serialise({duration: 20}) === S.serialise(S.DEFAULTS)')"
+check "a numeric string is not a change" 'true' \
+  "$(run 'S.serialise({duration: "20"}) === S.serialise({duration: 20})')"
+check "key order is not a change" 'true' \
+  "$(run 'S.serialise({mode: "zoomIn", duration: 30}) === S.serialise({duration: 30, mode: "zoomIn"})')"
+check "a real change is detected" 'false' \
+  "$(run 'S.serialise({duration: 21}) === S.serialise({duration: 20})')"
+# PanelSlider's mouse path never applies `step` (it only honours `integer`), so
+# the panel snaps. Without this a drag persists 1.1456522623697918 and "unsaved
+# changes" then flickers on a stray pixel of the same value.
+check "a zoom drag snaps to its 0.01 step" '1.15' \
+  "$(run 'S.snapToStep(1.1456522623697918, 0.01, 1.05)')"
+check "snapping keeps the value on the grid" '1.09' \
+  "$(run 'S.snapToStep(1.0949, 0.01, 1.05)')"
+check "a 0.5 step snaps to the half second" '2.5' \
+  "$(run 'S.snapToStep(2.62, 0.5, 0)')"
+check "an integer step stays whole" '34' \
+  "$(run 'S.snapToStep(33.7, 1, 5)')"
+check "snapping does not drift below the minimum" '1.05' \
+  "$(run 'S.snapToStep(1.0500000001, 0.01, 1.05)')"
+check "a nonsense step leaves the value alone" '1.234' \
+  "$(run 'S.snapToStep(1.234, 0, 1)')"
 check "a fixed mode is returned as-is" '["zoomIn","vertical"]' \
   "$(run '[S.variantForPair(3,"zoomIn"), S.variantForPair(9,"vertical")]')"
 check "random variant is deterministic per pair" 'true' \

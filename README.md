@@ -78,9 +78,17 @@ omarchy-shell shell enablePlugin gsus.animated-wallpaper '{}'               # pr
 
 ## Settings
 
-`settings.json` in the plugin directory is the single source of truth, and the service is its only
-writer — it both reads it (its `FileView` watches the file, so hand edits apply live) and writes it
-when the menu changes something.
+`~/.config/omarchy/animated-wallpaper.json` is the single source of truth, and the service is its
+only writer — it both reads it (its `FileView` watches the file, so hand edits apply live) and
+writes it when the menu applies something.
+
+**Not inside the plugin directory, and that is load-bearing:** the shell watches a plugin's whole
+folder and reloads the plugin when anything in it changes. A settings file kept there reloads the
+plugin on every save — measured at four reloads per write — which unmaps and remaps the bar panel
+mid-interaction. Omarchy's own stateful plugins keep their config outside for the same reason
+(`omarchy-lock-style` → `~/.config/omarchy/lock-style.json`).
+
+The file is created with the defaults on first run, so there is nothing to set up:
 
 ```json
 {
@@ -109,6 +117,8 @@ qs ipc call animated-wallpaper reset
 ```
 
 Add `--pid "$(qs list --all | awk '/Process ID/{print $3; exit}')"` if `qs` cannot find the instance.
+The IPC path applies immediately and skips the panel's Apply step — it is the scripting interface,
+not the UI.
 
 ## Tune
 
@@ -130,16 +140,23 @@ lengthen `duration` or lower `maxZoom` — that shimmer is the price of a moving
 
 ## Bar widget
 
-`BarWidget.qml` puts a button in the bar; `Menu.qml` is the small panel behind it, loaded lazily by
-the widget the way Omarchy's own clock plugin does it. The panel is the settings UI: live state
-(animating or paused, the direction in play, the current zoom, the wallpaper file) and a control per
-parameter — **Animate**, a **Duration** slider (5–120 s), a **Zoom level** slider (1.05–1.30×), a
-**Pause at end** slider (0–10 s), the **Direction mode** dropdown, the **Smooth motion** toggle and a
-**Reset to defaults** button.
+`BarWidget.qml` puts a button in the bar; `Menu.qml` is the settings panel behind it, loaded lazily
+by the widget the way Omarchy's own clock plugin does it.
 
-Sliders write to the service on every move (so the wallpaper responds while you drag) but only touch
-the disk on release — writing on every pixel of a drag would rewrite the file dozens of times a
-second.
+The panel edits a **local draft** and nothing takes effect until **Apply** is pressed: no half-chosen
+value can be left live, and "unsaved changes" is a real state rather than a hope. Two signals say so
+at once — a `● Unsaved changes` line in the theme accent under the title, and the button itself,
+which switches from a dim `Apply` to an accent-filled `Apply changes`. Closing and reopening the
+panel keeps the draft, so an unsaved edit is never silently thrown away; the reset button (the ⟳
+icon) only loads the defaults *into the panel*, and still needs Apply.
+
+Controls: **Animate**, **Duration** (5–120 s), **Zoom level** (1.05–1.30×), **Pause at end** (0–10 s),
+the **Direction mode** dropdown and the **Smooth motion** toggle.
+
+Sliders use their step (1 s / 0.01× / 0.5 s) because `PanelSlider` does not apply `step` itself — its
+mouse path only rounds when `integer: true`, so without `Settings.snapToStep` a drag would persist
+values like `1.1456522623697918` and the unsaved-changes comparison would then flicker on a stray
+pixel.
 
 ```bash
 omarchy bar put gsus.animated-wallpaper --section right --before omarchy.monitor   # place it
@@ -148,14 +165,13 @@ omarchy-shell shell summon gsus.animated-wallpaper '{}'                         
 omarchy-shell shell hide gsus.animated-wallpaper                                   # close it
 ```
 
-Rows for new actions go in the `Column` in `Menu.qml`; each one reads and writes state through
-`root.set(key, value)` / `root.flush()`, which go to the service — the same object the wallpaper
-animates from.
+Rows for new controls go in the `Column` in `Menu.qml`; each one edits the draft through
+`root.edit(key, value)` and the whole draft is pushed by `root.apply()`.
 
 ## Tests
 
 ```bash
-./tests/settings.test.sh    # 17 cases, seconds    -- the sanitiser, in node
+./tests/settings.test.sh    # 27 cases, seconds    -- the sanitiser, in node
 ./tests/pose.test.sh        # 14 cases, ~2.5 min   -- the motion, from the plugin's own trace
 ./tests/persist.test.sh     # 12 cases, ~40 s      -- write -> disk -> reload -> survives restart
 ```
@@ -227,4 +243,5 @@ Two more traps this plugin walked into, both worth knowing before adding a widge
 | 0.4 | the 0.1 glow removed — a static coloured haze fought the moving image |
 | 0.5 | everything additive gone: the glint band and the motes too. The image moving is the entire effect; `glow.png` and `make-glow.py` were deleted with them |
 | 0.6 | placeable in the bar: `BarWidget.qml` (button) + `Menu.qml` (small panel with live state and an Animate switch) |
-| 0.7 | configurable: the continuous sine becomes a cycle + dwell engine driven by `settings.json`, with sliders, a direction dropdown and an easing toggle in the menu, an IPC surface, and 43 test cases |
+| 0.7 | configurable: the continuous sine becomes a cycle + dwell engine driven by a settings file, with sliders, a direction dropdown and an easing toggle in the menu, an IPC surface, and 43 test cases |
+| 0.8 | the panel edits a local draft behind an **Apply** button with visible unsaved-changes feedback; the settings file moved out of the plugin directory (writing it there reloaded the plugin four times per save and unmapped the panel), and slider drags snap to their step |

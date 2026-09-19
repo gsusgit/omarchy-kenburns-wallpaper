@@ -8,7 +8,7 @@
 # desktop belongs to a human, and a suite that needs it idle is a suite that
 # fails for the wrong reason.
 #
-# Each scenario only rewrites settings.json; the running service picks it up
+# Each scenario only rewrites the settings file; the running service picks it up
 # through its FileView watcher, so no shell restart is involved.
 #
 #   ./tests/pose.test.sh                 all scenarios
@@ -17,7 +17,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 DEFAULT='{"enabled":true,"duration":20.0,"maxZoom":1.15,"mode":"random","smoothEasing":true,"pauseAtEnd":2.0}'
-cleanup() { printf '%s\n' "$DEFAULT" > settings.json; }
+cleanup() { printf '%s\n' "$DEFAULT" > "$HOME/.config/omarchy/animated-wallpaper.json"; }
 trap cleanup EXIT
 
 fails=0
@@ -27,11 +27,11 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
   local name="$1" cfg="$2" wait_s="$3" mode="$4"; shift 4
   if [[ -n ${ONLY:-} && $name != "$ONLY" ]]; then return 0; fi
 
-  printf '%s\n' "$cfg" > settings.json
+  printf '%s\n' "$cfg" > "$HOME/.config/omarchy/animated-wallpaper.json"
   local start; start=$(date +%s)
   sleep 2                                   # let the FileView watcher fire
   if ! journalctl --user -b --since "@$start" -o cat | grep -aq "animated-wallpaper] config:"; then
-    echo "-- $name: settings.json was not picked up"
+    echo "-- $name: the settings file was not picked up"
     fails=$((fails + 1)); return 1
   fi
 

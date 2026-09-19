@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 PLUGIN_DIR="$PWD"
-SETTINGS="$PLUGIN_DIR/settings.json"
+SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
 DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"mode":"random","smoothEasing":true,"pauseAtEnd":2}'
 
 fails=0

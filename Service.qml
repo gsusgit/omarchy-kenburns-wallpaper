@@ -44,10 +44,16 @@ Item {
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "gsus.animated-wallpaper"
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + pluginId
+  // NOT inside pluginDir: the shell watches a plugin's whole directory for
+  // changes and reloads it, so a settings file written there reloads the plugin
+  // on every save (4 reloads per write, measured) -- which unmaps and remaps the
+  // bar panel mid-interaction. Omarchy's own stateful plugins keep their config
+  // outside too (omarchy-lock-style -> ~/.config/omarchy/lock-style.json).
+  readonly property string settingsPath: Quickshell.env("HOME") + "/.config/omarchy/animated-wallpaper.json"
 
   // ------------------------------------------------------- user configuration
-  // settings.json is the single source of truth; Settings.js clamps everything,
-  // so `config` is always complete and in range whatever is on disk.
+  // The settings file is the single source of truth; Settings.js clamps
+  // everything, so `config` is always complete and in range whatever is on disk.
   property var config: Settings.sanitize({})
   property bool enabled: true                  // mirrors config.enabled
 
@@ -59,7 +65,7 @@ Item {
     root.startTrace()
   }
 
-  // The one place settings.json is written. The menu edits the values and calls
+  // The one place the settings file is written. The menu edits the values and calls
   // save() when a control is done being dragged; the IPC handler below calls it
   // too, which is what makes persistence testable without a mouse.
   function save() {
@@ -75,7 +81,7 @@ Item {
 
   FileView {
     id: settingsWriter
-    path: root.pluginDir + "/settings.json"
+    path: root.settingsPath
     watchChanges: false
     atomicWrites: true
     printErrors: false
@@ -129,13 +135,17 @@ Item {
 
   FileView {
     id: configFile
-    path: root.pluginDir + "/settings.json"
+    path: root.settingsPath
     watchChanges: true
     printErrors: false
     onLoaded: root.applyConfig(text())
     onLoadFailed: function(error) {
-      console.warn("[animated-wallpaper] settings.json unreadable, using defaults: " + error)
+      // First run (no file yet) and unreadable files land here. Fall back to the
+      // defaults AND write them out, so the file exists for the next boot and a
+      // hand-edited file can always be inspected to see the canonical shape.
+      console.warn("[animated-wallpaper] " + root.settingsPath + " unreadable, using defaults: " + error)
       root.applyConfig("")
+      root.save()
     }
     onFileChanged: reload()
   }
@@ -344,7 +354,7 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    console.log("[animated-wallpaper] ready v0.7: screens=" + Quickshell.screens.length
+    console.log("[animated-wallpaper] ready v0.8: screens=" + Quickshell.screens.length
       + " config=" + JSON.stringify(root.config))
   }
 
