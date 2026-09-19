@@ -28,25 +28,46 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
   local name="$1" cfg="$2" wait_s="$3" mode="$4"; shift 4
   if [[ -n ${ONLY:-} && $name != "$ONLY" ]]; then return 0; fi
 
-  printf '%s\n' "$cfg" > "$SETTINGS"
-  local start; start=$(date +%s)
-  sleep 2                                   # let the FileView watcher fire
-  if ! journalctl --user -b --since "@$start" -o cat | grep -aq "animated-wallpaper] config:"; then
-    echo "-- $name: the settings file was not picked up"
-    fails=$((fails + 1)); return 1
-  fi
+  local attempt
+  for attempt in 1 2 3; do
+    printf '%s\n' "$cfg" > "$SETTINGS"
+    local start; start=$(date +%s)
+    sleep 2                                 # let the FileView watcher fire
+    if ! journalctl --user -b --since "@$start" -o cat | grep -aq "animated-wallpaper] config:"; then
+      echo "-- $name: the settings file was not picked up"
+      fails=$((fails + 1)); return 1
+    fi
 
-  sleep "$wait_s"
-  journalctl --user -b --since "@$start" -o cat > "/tmp/trace-$name.raw"
-  # Only the samples belonging to THIS config: the tail of the previous
-  # scenario's trace would otherwise land in the same loop indices and poison
-  # every assertion (that cost one debugging round).
-  awk 'seen { print } /animated-wallpaper\] config:/ { seen = 1 }' "/tmp/trace-$name.raw" \
-    | grep -a "animated-wallpaper] pose " > "/tmp/pose-$name.txt" || true
-  echo "-- $name  ($(wc -l < "/tmp/pose-$name.txt") samples)"
-  python3 tests/analyse_pose.py "$mode" "$@" < "/tmp/pose-$name.txt"
-  fails=$((fails + $?))
+    sleep "$wait_s"
+    journalctl --user -b --since "@$start" -o cat > "/tmp/trace-$name.raw"
+
+    # A human is using this desktop, and the panel's Apply writes the same file
+    # this scenario just wrote. A second config line inside the window means the
+    # trace mixes two configs and every assertion below would fail for a reason
+    # that has nothing to do with the code (this poisoned a run: the numbers
+    # matched the panel's values exactly). Retry instead of reporting noise.
+    if [[ $(grep -ac "animated-wallpaper] config:" "/tmp/trace-$name.raw") -gt 1 ]]; then
+      echo "-- $name: the config changed under the test (someone applied from the panel), retry $attempt"
+      sleep 3
+      continue
+    fi
+
+    # Only the samples belonging to THIS config: the tail of the previous
+    # scenario's trace would otherwise land in the same loop indices and poison
+    # every assertion (that cost one debugging round).
+    awk 'seen { print } /animated-wallpaper\] config:/ { seen = 1 }' "/tmp/trace-$name.raw" \
+      | grep -a "animated-wallpaper] pose " > "/tmp/pose-$name.txt" || true
+    echo "-- $name  ($(wc -l < "/tmp/pose-$name.txt") samples)"
+    python3 tests/analyse_pose.py "$mode" "$@" < "/tmp/pose-$name.txt"
+    fails=$((fails + $?))
+    scenarios=$((scenarios + 1))
+    return 0
+  done
+
+  echo "-- $name: gave up after 3 attempts, the desktop kept changing the config"
+  fails=$((fails + 1))
   scenarios=$((scenarios + 1))
+  return 1
 }
 
 # duration 5 is the floor and keeps the suite short, so a loop is exactly 5 s
@@ -56,7 +77,9 @@ scenario loop '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in"}' 
 scenario out  '{"enabled":true,"duration":5.0,"maxZoom":1.25,"direction":"out"}' 18 out  5.0 1.25
 scenario ease '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in"}'  13 ease 1.20
 # The drift is its own axis: any zoom can creep any way, including a diagonal.
-scenario driftDiag '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in","drift":"upLeft"}' 13 drift -1 -1
+# The two scenarios differ only in length, which is what the length control is.
+scenario driftDiag  '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in","drift":"upLeft"}' 13 drift -1 -1 0.5
+scenario driftShort '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in","drift":"right","driftLength":0.2}' 13 drift 1 0 0.2
 
 echo "pose tests: $scenarios scenarios, $fails failures"
 exit $(( fails > 0 ))

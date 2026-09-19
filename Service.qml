@@ -125,6 +125,7 @@ Item {
     function setMaxZoom(value: string): void { root.applyIpc("maxZoom", value) }
     function setDirection(value: string): void { root.applyIpc("direction", value) }
     function setDrift(value: string): void { root.applyIpc("drift", value) }
+    function setDriftLength(value: string): void { root.applyIpc("driftLength", value) }
 
     function reset(): void {
       root.config = Settings.sanitize({})
@@ -231,9 +232,8 @@ Item {
   // and no combination of settings can pull the image inside the window and show
   // a black edge.
   readonly property var driftVector: Settings.driftVector(config.drift)
-  readonly property real driftAmount: 0.5                    // of the available margin
-  readonly property real panX: driftVector[0] * driftAmount
-  readonly property real panY: driftVector[1] * driftAmount
+  readonly property real panX: driftVector[0] * config.driftLength
+  readonly property real panY: driftVector[1] * config.driftLength
   readonly property real panOffsetX: panX * (zoom - 1) / 2   // as a fraction of the screen
   readonly property real panOffsetY: panY * (zoom - 1) / 2
 

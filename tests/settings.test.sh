@@ -18,11 +18,11 @@ run() {
   node tests/lib/run-settings.js "$1" 2>&1
 }
 
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in","drift":"center"}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in","drift":"center","driftLength":0.5}'
 
 # ---------------------------------------------------------------- the schema
 check "empty input gives the documented defaults" "$DEFAULT" "$(run 'S.sanitize({})')"
-check "the schema is exactly five values" 'enabled,duration,maxZoom,direction,drift' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
+check "the schema is exactly six values" 'enabled,duration,maxZoom,direction,drift,driftLength' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
 check "preset is gone" 'undefined' "$(run 'typeof S.sanitize({preset: "classicCinema"}).preset')"
 check "handheld is gone" 'undefined' "$(run 'typeof S.sanitize({handheld: true}).handheld')"
 check "breathing is gone" 'undefined' "$(run 'typeof S.sanitize({breathing: false}).breathing')"
@@ -31,8 +31,8 @@ check "pauseAtEnd is gone" 'undefined' "$(run 'typeof S.sanitize({pauseAtEnd: 3}
 check "mode is gone" 'undefined' "$(run 'typeof S.sanitize({mode: "random"}).mode')"
 
 # ------------------------------------------------------------------- clamping
-check "duration clamps to the 60 ceiling" '{"enabled":true,"duration":60,"maxZoom":1.15,"direction":"in","drift":"center"}' "$(run 'S.sanitize({duration: 500})')"
-check "duration below the floor clamps to 5" '{"enabled":true,"duration":5,"maxZoom":1.15,"direction":"in","drift":"center"}' "$(run 'S.sanitize({duration: 4})')"
+check "duration clamps to the 60 ceiling" '{"enabled":true,"duration":60,"maxZoom":1.15,"direction":"in","drift":"center","driftLength":0.5}' "$(run 'S.sanitize({duration: 500})')"
+check "duration below the floor clamps to 5" '{"enabled":true,"duration":5,"maxZoom":1.15,"direction":"in","drift":"center","driftLength":0.5}' "$(run 'S.sanitize({duration: 4})')"
 check "the duration ceiling is 60" '60' "$(run 'S.LIMITS.duration.max')"
 check "the duration floor is 5" '5' "$(run 'S.LIMITS.duration.min')"
 check "maxZoom clamps to the 1.30 cap" '1.3' "$(run 'S.sanitize({maxZoom: 9}).maxZoom')"
@@ -59,7 +59,7 @@ check "unreadable enabled keeps its default" 'true' "$(run 'S.sanitize({enabled:
 check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, duration: 20})')"
 check "garbage text parses to the defaults" "$DEFAULT" "$(run 'S.parse("not json at all")')"
 check "null parses to the defaults" "$DEFAULT" "$(run 'S.parse(null)')"
-check "an old v2 file keeps only what still exists" '{"enabled":true,"duration":42,"maxZoom":1.25,"direction":"out","drift":"center"}' \
+check "an old v2 file keeps only what still exists" '{"enabled":true,"duration":42,"maxZoom":1.25,"direction":"out","drift":"center","driftLength":0.5}' \
   "$(run 'S.sanitize({preset: "custom", enabled: true, duration: 42, maxZoom: 1.25, direction: "out", smoothEasing: true, handheld: true, breathing: true})')"
 
 # ------------------------------------------------------------------- drift
@@ -81,8 +81,17 @@ check "an unknown drift name yields no vector" '0,0' "$(run 'S.driftVector("nope
 check "the centre vector is zero" '0,0' "$(run 'S.driftVector("center").join(",")')"
 check "serialise writes the drift" 'true' "$(run 'S.serialise({drift: "up"}).indexOf("\"drift\": \"up\"") > 0')"
 
+# -------------------------------------------------------------- drift length
+check "the length defaults to half the margin" '0.5' "$(run 'S.sanitize({}).driftLength')"
+check "the length clamps to the 0.9 ceiling" '0.9' "$(run 'S.sanitize({driftLength: 5}).driftLength')"
+check "the ceiling is below 1.0 on purpose" '0.9' "$(run 'S.LIMITS.driftLength.max')"
+check "a negative length clamps to zero" '0' "$(run 'S.sanitize({driftLength: -1}).driftLength')"
+check "a nonsense length falls back to the default" '0.5' "$(run 'S.sanitize({driftLength: "wide"}).driftLength')"
+check "the length steps by five percent" '0.05' "$(run 'S.STEPS.driftLength')"
+check "a length drag snaps to its step" '0.35' "$(run 'S.snapToStep(0.3412, 0.05, 0)')"
+
 # --------------------------------------------------------------- serialising
-check "serialise round-trips canonically" '{"enabled":true,"duration":12,"maxZoom":1.25,"direction":"out","drift":"upLeft"}' \
+check "serialise round-trips canonically" '{"enabled":true,"duration":12,"maxZoom":1.25,"direction":"out","drift":"upLeft","driftLength":0.5}' \
   "$(run 'JSON.parse(S.serialise({duration: 12, maxZoom: 1.25, direction: "out", drift: "upLeft"}))')"
 check "serialise never writes a removed key" 'false' \
   "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
@@ -104,7 +113,7 @@ check "snapping keeps the value on the grid" '1.09' "$(run 'S.snapToStep(1.0949,
 check "an integer step stays whole" '34' "$(run 'S.snapToStep(33.7, 1, 5)')"
 check "snapping does not drift below the minimum" '1.05' "$(run 'S.snapToStep(1.0500000001, 0.01, 1.05)')"
 check "a nonsense step leaves the value alone" '1.234' "$(run 'S.snapToStep(1.234, 0, 1)')"
-check "the panel steps are one per slider" '{"duration":1,"maxZoom":0.01}' "$(run 'JSON.stringify(S.STEPS)')"
+check "the panel steps are one per slider" '{"duration":1,"maxZoom":0.01,"driftLength":0.05}' "$(run 'JSON.stringify(S.STEPS)')"
 
 (( fails == 0 )) && echo "settings tests: OK" || echo "settings tests: FAILED ($fails)"
 exit $(( fails > 0 ))

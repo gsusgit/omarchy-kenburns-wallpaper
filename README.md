@@ -15,21 +15,32 @@ pulls back out of it. Both halves get exactly half of `duration`: an earlier ver
 quarters of the loop going out and a quarter coming back, and the three-times-quicker return read as a
 jump at the end of the move on a real desktop.
 
+**The drift is the move's other axis**, and it is deliberately independent of the zoom: any zoom can
+creep any way. `drift` is one of the eight compass points or `center` (no drift at all), and
+`driftLength` is how far it travels, as a fraction of the margin the zoom opens. Because the offset
+rides on that margin rather than on absolute pixels, the image can never be pulled inside the window —
+no combination of zoom, drift and length can show a black edge. It is also self-scaling: at zoom 1
+there is no drift at all, and a small `maxZoom` simply means a shorter journey.
+
 | Parameter | Default | Range | Meaning |
 |---|---|---|---|
 | `enabled` | `true` | — | freezes the clock; the wallpaper stays painted |
 | `duration` | `20.0` s | 5–60 | one whole loop, out and back |
 | `maxZoom` | `1.15` | 1.05–**1.30** | how far it zooms; the 1.30 cap is hard, above it the copy shows its pixels |
 | `direction` | `in` | in, out | which pose the loop starts from |
+| `drift` | `center` | center, left, right, up, down, and the four diagonals | which way the image creeps while the zoom opens |
+| `driftLength` | `0.5` | 0–**0.9** | how far it drifts, as a fraction of the margin; the 0.9 ceiling leaves ~14 px of slack so a hairline can never show |
 
 That is the entire schema. Everything else the plugin used to expose was removed after living with
 it — see the History table for what and why.
 
 Measured at the defaults on a 1920x1080 desktop: the image edge moves at a **median 16 px/s, peaking
 at 22.6 px/s** (the measured peak matches the analytic `maxZoom`·π/`duration` exactly), and the zoom
-sweeps the full **1.0000 → 1.1500**, i.e. 144 px of edge travel. **Speed is what makes motion visible,
-not size**: the first version moved 2 % over 90 s, which is 0.7 px/s at the edge, and no eye catches
-it. Raising `duration` is the calm knob.
+sweeps the full **1.0000 → 1.1500**, i.e. 144 px of edge travel. The drift adds up to **72 px** of
+travel at the default `driftLength` of 0.5, or 130 px at the 0.9 ceiling, along whichever axis (or
+diagonal) it is pointed at. **Speed is what makes motion visible, not size**: the first version moved
+2 % over 90 s, which is 0.7 px/s at the edge, and no eye catches it. Raising `duration` is the calm
+knob.
 
 `omarchy-shell` costs **5.9 %** of one core with the plugin on and **3.9 %** off — about **+2 %** at
 ~14 fps, no blur and no per-frame shader change. The whole feature adds no timers: one clock drives
@@ -99,7 +110,9 @@ The file is created with the defaults on first run, so there is nothing to set u
   "enabled": true,
   "duration": 20,
   "maxZoom": 1.15,
-  "direction": "in"
+  "direction": "in",
+  "drift": "center",
+  "driftLength": 0.5
 }
 ```
 
@@ -115,6 +128,8 @@ The same values are reachable from a terminal — which is also how persistence 
 qs ipc call animated-wallpaper status                  # the live config as JSON
 qs ipc call animated-wallpaper setDuration 45
 qs ipc call animated-wallpaper setDirection out
+qs ipc call animated-wallpaper setDrift upLeft            # "up-left" and "Up Left" work too
+qs ipc call animated-wallpaper setDriftLength 0.8         # clamped to 0.9 on write
 qs ipc call animated-wallpaper setMaxZoom 9            # clamped to 1.30 on write
 qs ipc call animated-wallpaper reset
 ```
@@ -167,6 +182,15 @@ because it is a transport control rather than a motion setting), then two sectio
 | ZOOM | Direction | `In` / `Out` segmented switch |
 | ZOOM | Level | slider, 1.05–1.30× |
 | DURATION | Amount | slider, 5–60 seconds (one whole loop) |
+| DIRECTIONS | Drift | a 3×3 diana of nine chips: the eight compass points plus the centre dot |
+| DIRECTIONS | Length | slider, 0–90 % of the margin the zoom opens |
+
+The diana is a `Grid` of the kit's own `Button` rather than a `ButtonGroup` (which is a `Row` and
+cannot do 3×3). Using the kit's chip is what makes it cheap *and* consistent: it inherits the theme's
+borders, selected fill, tooltips and focus for free, and it centres its own content, so a chip wider
+than its glyph still reads as a button. A hand-drawn hexagonal or circular control was considered and
+rejected — a hexagon has six sides and there are eight directions, and a `Shape`-based control stops
+inheriting the theme.
 
 Sliders use their step (1 s / 0.01×) because `PanelSlider` does not apply `step` itself — its mouse
 path only rounds when `integer: true`, so without `Settings.snapToStep` a drag would persist values
@@ -185,9 +209,9 @@ Rows for new controls go in the `Column` in `Menu.qml`; each one edits the draft
 ## Tests
 
 ```bash
-./tests/settings.test.sh    # 43 cases, seconds    -- the sanitiser, in node
-./tests/pose.test.sh        # 36 cases, ~1.5 min   -- the motion, from the plugin's own trace
-./tests/persist.test.sh     # 19 cases, ~40 s      -- write -> disk -> reload -> survives restart
+./tests/settings.test.sh    # 65 cases, seconds    -- the sanitiser, in node
+./tests/pose.test.sh        # 47 cases, ~2 min     -- the motion, from the plugin's own trace
+./tests/persist.test.sh     # 24 cases, ~70 s      -- write -> disk -> reload -> survives restart
 ```
 
 `pose.test.sh` asserts against a **pose trace** the service logs while a config loads
@@ -198,7 +222,17 @@ the loop period is `duration`, that the zoom reaches `maxZoom` and returns to 1.
 never jumps at the seam, that neither extreme is dwelt on, that **both halves run at the same pace**
 (the regression test for the 3/4–1/4 split), that the zoom follows one cosine across the loop (max
 deviation 0.00000 against an independent reimplementation), that the cosine's peak/mean slope is
-≈1.56 against 1.00 for a linear ramp, and that `out` really starts from the zoomed-in pose.
+≈1.56 against 1.00 for a linear ramp, and that `out` really starts from the zoomed-in pose. The drift
+scenarios add the identity that keeps the image safe — the offset is *exactly* `driftLength × (zoom −
+1) / 2`, so it can never exceed the margin it rides on — plus that it points the way it was told
+(sign-agnostically: the first version of that check only worked for a negative vector and failed a
+correct engine), that it travels its configured length, and that it vanishes at the near pose.
+
+**A scenario aborts and retries if the config changes under it.** This desktop belongs to a human, and
+the panel's Apply writes the same settings file a scenario just wrote: a second `config:` line inside
+the capture window means the trace mixes two configs. That poisoned a run once — every assertion
+failed, and the numbers matched the panel's values exactly (0.084 = 1.4·(1.12−1)/2). Retrying is the
+honest fix; silently skipping would hide real regressions.
 
 `persist.test.sh` drives the real write path over IPC — the same `set()`/`save()` pair the menu
 calls — then restarts the shell and re-reads the config.
@@ -260,3 +294,4 @@ Two more traps this plugin walked into, both worth knowing before adding a widge
 | 0.8 | the panel edits a local draft behind an **Apply** button with visible unsaved-changes feedback; the settings file moved out of the plugin directory (writing it there reloaded the plugin four times per save and unmapped the panel), and slider drags snap to their step |
 | 2.0 | motion dynamics: presets, a binary In/Out direction, handheld shake, a breathing loop, and `pauseAtEnd` removed. All four extras were then dropped as redundant — see below |
 | **3.0** | **the small version: four values, one cosine, nothing else.** `preset` (a shortcut through the other values, not an effect of its own), `handheld` (a ~50 px wobble on a 40 s traverse read as the wallpaper vibrating rather than as a hand), `breathing` (its "off" state is a hard snap back, its "on" state left the direction switch looking inert) and `smoothEasing` (ease-in-out is simply the better default) are all gone. The loop became symmetric because the 3/4–1/4 split's quicker return read as a jump at the end; the pan layer went with the shake |
+| **3.1** | **the drift comes back as an axis of its own** — independent of the zoom, so any zoom can creep any way: a 3×3 diana of nine directions (the four straight, the four diagonals, the centre) plus a `driftLength` slider. Straight-only was built first and rejected for leaving out the diagonals; an angle in degrees and a pair of X/Y ranges were rejected too, because both spend a slider on something one click can say, and degrees needs a second slider for magnitude anyway |

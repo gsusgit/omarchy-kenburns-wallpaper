@@ -180,8 +180,7 @@ if MODE in ("loop", "out"):
                                               max(abs(s["y"]) for s in samples)))
 
 elif MODE == "drift":
-    dx, dy = float(sys.argv[2]), float(sys.argv[3])
-    amount = 0.5                      # Service.qml's driftAmount
+    dx, dy, amount = float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
     # The offset must be exactly the configured fraction of the margin the zoom
     # opens. That identity is what makes a black edge impossible at any zoom or
     # drift setting: the offset can never exceed the overhang it rides on.
@@ -195,14 +194,26 @@ elif MODE == "drift":
     check(worst <= 1.0 + 1e-9, "the image never pulls inside the window",
           "worst offset/margin = %.3f" % worst)
 
-    # Visible, not theoretical: 0.03 of a 1920 px screen is ~58 px of travel.
-    check(max(abs(s["x"]) for s in samples) > 0.03, "the drift is actually there",
-          "max |x| = %.4f (%.0f px on 1920)" % (max(abs(s["x"]) for s in samples),
-                                                max(abs(s["x"]) for s in samples) * 1920))
+    # Visible, not theoretical. The expected travel comes from the trace's own
+    # peak zoom, so this also proves the length is the configured fraction of the
+    # margin rather than a fixed number of pixels.
+    target = max(s["z"] for s in samples)
+    expected = amount * (target - 1) / 2
+    peak = max(abs(s["x"]) for s in samples)
+    check(peak > 0.9 * expected, "the drift travels its configured length",
+          "max |x| = %.4f, expected %.4f (%.0f px on 1920)" % (peak, expected, expected * 1920))
+    # Sign-agnostic: assert the offset never points the wrong way. Written as
+    # `v * dx < 0` rather than a one-sided bound, because a bound like `max(x) <=
+    # 0` only happens to be right for a negative dx -- it failed a correct engine
+    # the first time this scenario ran with dx = +1.
     if dx:
-        check(max(s["x"] for s in samples) <= 1e-9, "the drift goes the way it is told (x)")
+        wrong = [s["x"] for s in samples if s["x"] * dx < -1e-9]
+        check(not wrong, "the drift goes the way it is told (x)",
+              "wrong-signed samples: %d of %d" % (len(wrong), len(samples)))
     if dy:
-        check(max(s["y"] for s in samples) <= 1e-9, "the drift goes the way it is told (y)")
+        wrong = [s["y"] for s in samples if s["y"] * dy < -1e-9]
+        check(not wrong, "the drift goes the way it is told (y)",
+              "wrong-signed samples: %d of %d" % (len(wrong), len(samples)))
     # It rides the zoom, so it must vanish at the near pose rather than persist.
     near = [s for s in samples if s["z"] < 1.01]
     if near:

@@ -315,6 +315,28 @@ Panel {
           }
         }
 
+        Text {
+          width: parent.width
+          // As a fraction of the margin the zoom opens, so the number means the
+          // same thing whatever the zoom is set to.
+          text: "Length  " + Math.round(root.draft.driftLength * 100) + "%"
+          color: root.barForeground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        PanelSlider {
+          width: parent.width
+          bar: root.bar
+          minimum: Settings.LIMITS.driftLength.min
+          maximum: Settings.LIMITS.driftLength.max
+          step: Settings.STEPS.driftLength
+          value: root.draft.driftLength
+          onMoved: function(v) {
+            root.edit("driftLength", Settings.snapToStep(v, Settings.STEPS.driftLength, Settings.LIMITS.driftLength.min))
+          }
+        }
+
         PanelSeparator { foreground: root.barForeground }
 
         // ------------------------------------------------------ apply

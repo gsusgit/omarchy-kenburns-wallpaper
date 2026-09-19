@@ -87,17 +87,23 @@ var DEFAULTS = {
   duration: 20.0,
   maxZoom: 1.15,
   direction: "in",
-  drift: "center"
+  drift: "center",
+  driftLength: 0.5
 }
 
 var LIMITS = {
   duration: { min: 5, max: 60 },
-  maxZoom: { min: 1.05, max: 1.30 }    // 1.30 is the cap: above it the copy shows its pixels
+  maxZoom: { min: 1.05, max: 1.30 },   // 1.30 is the cap: above it the copy shows its pixels
+  // How far the drift travels, as a fraction of the margin the zoom opens. The
+  // ceiling is 0.9 rather than 1.0 on purpose: at 1.0 the image edge lands
+  // exactly on the screen edge, so a sub-pixel rounding could show a hairline of
+  // whatever is underneath. 0.9 leaves ~14 px of slack at the default zoom.
+  driftLength: { min: 0, max: 0.9 }
 }
 
 // One step per slider. PanelSlider does not apply `step` itself, so the panel
 // reads these and snaps (see snapToStep).
-var STEPS = { duration: 1, maxZoom: 0.01 }
+var STEPS = { duration: 1, maxZoom: 0.01, driftLength: 0.05 }
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)) }
 
@@ -167,7 +173,8 @@ function sanitize(raw) {
     duration: number(input.duration, LIMITS.duration.min, LIMITS.duration.max, DEFAULTS.duration),
     maxZoom: number(input.maxZoom, LIMITS.maxZoom.min, LIMITS.maxZoom.max, DEFAULTS.maxZoom),
     direction: normaliseDirection(input.direction),
-    drift: normaliseDrift(input.drift)
+    drift: normaliseDrift(input.drift),
+    driftLength: number(input.driftLength, LIMITS.driftLength.min, LIMITS.driftLength.max, DEFAULTS.driftLength)
   }
 }
 

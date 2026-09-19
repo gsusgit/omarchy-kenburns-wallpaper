@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in","drift":"center"}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in","drift":"center","driftLength":0.5}'
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -60,8 +60,8 @@ restore
 sleep 2
 check "status starts at the defaults" "$DEFAULT" "$(ipc status)"
 
-echo "-- the file holds exactly the five values"
-check "the key set is closed" 'direction,drift,duration,enabled,maxZoom' \
+echo "-- the file holds exactly the six values"
+check "the key set is closed" 'direction,drift,driftLength,duration,enabled,maxZoom' \
   "$(python3 -c "import json;print(','.join(sorted(json.load(open('$SETTINGS')).keys())))")"
 check "pauseAtEnd is not in the file" "keyerror" "$(disk pauseAtEnd 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "mode is not in the file" "keyerror" "$(disk mode 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
@@ -105,20 +105,35 @@ ipc setDrift sideways >/dev/null
 wait_for_disk "d['drift'] == 'center'" 6 && check "an unknown drift falls back to centre" "center" "$(disk drift)" \
   || check "an unknown drift falls back to centre" "center" "timeout"
 
+ipc setDriftLength 0.8 >/dev/null
+wait_for_disk "d['driftLength'] == 0.8" 6 && check "the drift length persists" "0.8" "$(disk driftLength)" \
+  || check "the drift length persists" "0.8" "timeout"
+
+ipc setDriftLength 5 >/dev/null          # far above the 0.9 ceiling
+wait_for_disk "d['driftLength'] == 0.9" 6 && check "the length is clamped to the 0.9 ceiling" "0.9" "$(disk driftLength)" \
+  || check "the length is clamped to the 0.9 ceiling" "0.9" "timeout"
+
+ipc setDriftLength -2 >/dev/null         # below the floor
+wait_for_disk "d['driftLength'] == 0" 6 && check "a negative length clamps to zero" "0" "$(disk driftLength)" \
+  || check "a negative length clamps to zero" "0" "timeout"
+
+ipc setDriftLength 0.8 >/dev/null
+wait_for_disk "d['driftLength'] == 0.8" 6
+
 ipc setDuration 42 >/dev/null
 ipc setMaxZoom 1.25 >/dev/null
 wait_for_disk "d['maxZoom'] == 1.25" 6
 
 echo "-- surviving a restart (the acceptance criterion)"
 sleep 2
-check "the values are in place before the restart" "42|1.25|out|center" \
-  "$(disk duration)|$(disk maxZoom)|$(disk direction)|$(disk drift)"
+check "the values are in place before the restart" "42|1.25|out|center|0.8" \
+  "$(disk duration)|$(disk maxZoom)|$(disk direction)|$(disk drift)|$(disk driftLength)"
 omarchy-restart-shell >/dev/null 2>&1
 sleep 10
 SHELL_PID=$(qs list --all | awk '/Process ID/{print $3; exit}')
 check "the shell came back" "true" "$([[ -n $SHELL_PID ]] && echo true || echo false)"
-check "and the values survived the restart" "42|1.25|out|center" \
-  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live direction)|$(ipc status | live drift)"
+check "and the values survived the restart" "42|1.25|out|center|0.8" \
+  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live direction)|$(ipc status | live drift)|$(ipc status | live driftLength)"
 
 echo "-- reset"
 ipc reset >/dev/null
