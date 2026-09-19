@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "duration": 20.0,
+  "maxZoom": 1.15,
+  "mode": "random",
+  "smoothEasing": true,
+  "pauseAtEnd": 2.0
+}
