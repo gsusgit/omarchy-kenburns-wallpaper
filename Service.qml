@@ -47,6 +47,11 @@ Item {
   readonly property int exposurePeriodMs: 22000
   readonly property int revealMs: 420          // Omarchy's own reveal duration
 
+  // The bar widget's panel flips this. Paused freezes the clock, so every
+  // animated value stops where it is -- the wallpaper keeps being painted, it
+  // just stops moving.
+  property bool enabled: true
+
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateDir: home + "/.local/state/omarchy/current"
   readonly property string currentLink: stateDir + "/background"
@@ -73,7 +78,7 @@ Item {
   property real clock: 0
   Timer {
     interval: root.frameMs
-    running: true
+    running: root.enabled
     repeat: true
     onTriggered: root.clock += root.frameMs
   }
@@ -173,8 +178,9 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    console.log("[animated-wallpaper] ready v0.5: screens=" + Quickshell.screens.length
-      + " motion=" + root.motion + " scalePeriodMs=" + root.scalePeriodMs)
+    console.log("[animated-wallpaper] ready v0.6: screens=" + Quickshell.screens.length
+      + " motion=" + root.motion + " scalePeriodMs=" + root.scalePeriodMs
+      + " enabled=" + root.enabled)
   }
 
   Variants {

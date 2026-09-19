@@ -86,6 +86,23 @@ If the fine detail of a busy illustration shimmers (sub-pixel resampling on stip
 lengthen `panPeriodMs`, raise `scalePeriodMs` or lower `motion` — that shimmer is the price of a
 moving image.
 
+## Bar widget
+
+`BarWidget.qml` puts a button in the bar; `Menu.qml` is the small panel behind it, loaded lazily by
+the widget the way Omarchy's own clock plugin does it. The panel shows live state — animating or
+paused, the current zoom, the motion dial, the wallpaper file — and an **Animate** switch that stops
+and starts the drift (it flips `enabled` on the service, which freezes the clock).
+
+```bash
+omarchy bar put gsus.animated-wallpaper --section right --before omarchy.monitor   # place it
+omarchy bar move gsus.animated-wallpaper --section center                          # move it
+omarchy-shell shell summon gsus.animated-wallpaper '{}'                            # open the panel
+omarchy-shell shell hide gsus.animated-wallpaper                                   # close it
+```
+
+Rows for new actions go in the `Column` in `Menu.qml`; each one reads and writes state on the
+plugin's own service instance (`root.service`), which is the same object the wallpaper animates from.
+
 ## Disable / remove
 
 ```bash
@@ -105,6 +122,22 @@ Also: the main window is deliberately **inline** in `Service.qml` rather than a 
 component. Quickshell's `Variants` delegate model only initialises the model roles (`modelData`) for
 delegates it can see, so a separate component silently gets an undefined screen and never maps.
 
+Two more traps this plugin walked into, both worth knowing before adding a widget:
+
+* **Never name a nested panel file `Panel.qml`.** Its root type would be `Panel`, which collides
+  with `qs.Ui`'s `Panel` inside the plugin's own directory, and the bar widget then refuses to load
+  with `File name case mismatch` — the file name on disk is fine, the *type* is what clashes. This
+  plugin's menu is `Menu.qml`.
+* **A plugin that declares `bar-widget` *plus* another kind must be removed from `plugins[]` before
+  it can be placed in the bar.** The registry finds it there, counts it as already enabled, and
+  `omarchy bar put` answers "is on the bar" without ever touching the layout. The order that works:
+
+  ```bash
+  omarchy-shell shell setPluginEnabled gsus.animated-wallpaper false
+  omarchy bar put gsus.animated-wallpaper --section right --before omarchy.monitor
+  ```
+
+
 ## Not in this iteration
 
 * GIF/WebP wallpapers do not animate (Omarchy's renderer uses `Image`, not `AnimatedImage`; that file
@@ -122,3 +155,4 @@ delegates it can see, so a separate component silently gets an undefined screen 
 | 0.3 | amplitudes and speeds raised: 2 % over 90 s (0.7 px/s) was invisible, so it became 7 % over 34 s (~6 px/s) |
 | 0.4 | the 0.1 glow removed — a static coloured haze fought the moving image |
 | 0.5 | everything additive gone: the glint band and the motes too. The image moving is the entire effect; `glow.png` and `make-glow.py` were deleted with them |
+| 0.6 | placeable in the bar: `BarWidget.qml` (button) + `Menu.qml` (small panel with live state and an Animate switch) |
