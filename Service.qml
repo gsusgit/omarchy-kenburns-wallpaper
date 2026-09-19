@@ -59,6 +59,67 @@ Item {
     root.startTrace()
   }
 
+  // The one place settings.json is written. The menu edits the values and calls
+  // save() when a control is done being dragged; the IPC handler below calls it
+  // too, which is what makes persistence testable without a mouse.
+  function save() {
+    settingsWriter.setText(Settings.serialise(root.config) + "\n")
+  }
+
+  function set(key, value) {
+    var next = {}
+    for (var k in root.config) next[k] = root.config[k]
+    next[key] = value
+    root.config = Settings.sanitize(next)
+  }
+
+  FileView {
+    id: settingsWriter
+    path: root.pluginDir + "/settings.json"
+    watchChanges: false
+    atomicWrites: true
+    printErrors: false
+  }
+
+  // Scriptable surface. Handy from a terminal, and it is how the persistence
+  // assertions in tests/persist.test.sh drive a real write + reload round trip.
+  //
+  // One function per key rather than a generic set(key, value): the CLI reads
+  // better (`qs ipc call animated-wallpaper setDuration 45`) and a typo in the
+  // key cannot reach the config. Note when linting: use /usr/lib/qt6/bin/qmllint
+  // -- the /usr/bin/qmllint on this box is Qt5's (5.15) and crashes silently
+  // (exit 255, no message) on Quickshell's Qt6 types.
+  function applyIpc(key, value) {
+    var v = value
+    if (value === "true") v = true
+    else if (value === "false") v = false
+    else if (value !== "" && !isNaN(Number(value))) v = Number(value)
+    root.set(key, v)
+    root.save()
+    console.log("[animated-wallpaper] ipc " + key + "=" + v)
+  }
+
+  IpcHandler {
+    target: "animated-wallpaper"
+
+    function setEnabled(value: string): void { root.applyIpc("enabled", value) }
+    function setDuration(value: string): void { root.applyIpc("duration", value) }
+    function setMaxZoom(value: string): void { root.applyIpc("maxZoom", value) }
+    function setMode(value: string): void { root.applyIpc("mode", value) }
+    function setSmoothEasing(value: string): void { root.applyIpc("smoothEasing", value) }
+    function setPauseAtEnd(value: string): void { root.applyIpc("pauseAtEnd", value) }
+
+    function reset(): void {
+      root.config = Settings.sanitize({})
+      root.save()
+      console.log("[animated-wallpaper] ipc reset")
+    }
+
+    function status(): string {
+      return JSON.stringify(root.config)
+    }
+  }
+
   // A config change restarts the cycle, so the new values apply from a pose you
   // can predict instead of mid-segment.
   onConfigChanged: {

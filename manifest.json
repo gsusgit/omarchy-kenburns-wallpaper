@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gsus.animated-wallpaper",
   "name": "Animated Wallpaper",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "author": "gsus",
   "description": "A wallpaper that is faintly alive: the image itself drifts, very slowly. Nothing is painted on top of it.",
   "kinds": ["service", "bar-widget"],
@@ -12,7 +12,7 @@
   },
   "barWidget": {
     "displayName": "Animated wallpaper",
-    "description": "A bar button with a small panel: live state of the animated wallpaper, and a switch to pause or resume it.",
+    "description": "A bar button with a settings panel: pause or resume the animation, and set its duration, zoom, pause-at-end, direction and easing.",
     "category": "Appearance",
     "allowMultiple": false,
     "defaultSection": "right",

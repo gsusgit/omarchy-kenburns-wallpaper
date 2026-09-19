@@ -13,10 +13,7 @@ check() { # check <description> <expected-json> <actual-json>
 }
 
 run() {
-  { tail -n +2 Settings.js
-    echo "module.exports={sanitize:sanitize,parse:parse,serialise:serialise,variantForPair:variantForPair,MODES:MODES,LABELS:LABELS,LIMITS:LIMITS,DEFAULTS:DEFAULTS};"
-  } > /tmp/gsus-settings.js
-  node -e "const S=require('/tmp/gsus-settings.js'); console.log(JSON.stringify($1))" 2>&1
+  node tests/lib/run-settings.js "$1" 2>&1
 }
 
 DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"mode":"random","smoothEasing":true,"pauseAtEnd":2}'
@@ -54,6 +51,10 @@ check "random variant is always one of the four" 'true' \
   "$(run '[0,1,2,3,4,5,6,7,8,9,10,11].every(function(i){return ["zoomIn","zoomOut","horizontal","vertical"].indexOf(S.variantForPair(i,"random"))>=0})')"
 check "random variant covers all four variants" '4' \
   "$(run 'new Set([...Array(16).keys()].map(function(i){return S.variantForPair(i,"random")})).size')"
+check "the dropdown offers one option per mode, in order" 'zoomIn=Zoom In,zoomOut=Zoom Out,horizontal=Horizontal,vertical=Vertical,random=Random' \
+  "$(run 'S.modeOptions().map(function(o){return o.value+"="+o.label}).join(",")')"
+check "every dropdown value is a real mode" 'true' \
+  "$(run 'S.modeOptions().every(function(o){return S.MODES.indexOf(o.value)>=0})')"
 
 (( fails == 0 )) && echo "settings tests: OK" || echo "settings tests: FAILED ($fails)"
 exit $(( fails > 0 ))

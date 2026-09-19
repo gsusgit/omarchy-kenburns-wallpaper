@@ -29,6 +29,15 @@ var LABELS = {
   random: "Random"
 }
 
+// Ordered {value,label} pairs for the mode dropdown: the human labels the menu
+// shows, mapped to the values the engine switches on. Derived from MODES and
+// LABELS so a new mode cannot end up half-wired.
+function modeOptions() {
+  var out = []
+  for (var i = 0; i < MODES.length; i++) out.push({ value: MODES[i], label: LABELS[MODES[i]] })
+  return out
+}
+
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)) }
 
 function number(value, min, max, fallback) {

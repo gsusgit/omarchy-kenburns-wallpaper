@@ -7,20 +7,30 @@ Omarchy 4 (Quattro) plugin, Quickshell + QML.
 
 ## What it does, in numbers
 
-Everything is scaled by a single dial: `motion` (`0.02` = the shipped 2%).
+The move is a **cycle + dwell**: one traverse takes `duration`, then the image holds still for
+`pauseAtEnd`. A **pair** is two cycles — out and back — so every pair ends on the pose it started
+from and a fixed direction can never jump.
 
-| Effect | Magnitude | Period |
-|---|---|---|
-| Ken Burns zoom | 1.000 → 1.070 | 34 s |
-| Pan | up to ±44 px, tied to the zoom slack | 47 s |
-| Exposure | 0 → 2.5 % darker, then back | 22 s |
+| Parameter | Default | Range | Meaning |
+|---|---|---|---|
+| `enabled` | `true` | — | freezes the clock; the wallpaper stays painted |
+| `duration` | `20.0` s | 5–120 | one traverse |
+| `pauseAtEnd` | `2.0` s | 0–10 | the still window after it |
+| `maxZoom` | `1.15` | 1.05–**1.30** | how far it zooms; the 1.30 cap is hard, above it the copy shows its pixels |
+| `mode` | `random` | zoomIn, zoomOut, horizontal, vertical, random | direction |
+| `smoothEasing` | `true` | — | ease-in-out (cosine) vs linear |
+
+`horizontal` and `vertical` pin the zoom at `maxZoom` and sweep sideways instead — that is what
+creates the margin to pan into, at the price of a permanent 15 % crop at the default.
 
 **Speed is what makes motion visible, not size.** The first version moved 2 % over 90 s — that is
-0.7 px/s at the screen edge, and no eye catches it. The current preset moves the image edge at
-~6 px/s, which you can see *and* still reads as calm.
+0.7 px/s at the screen edge, and no eye catches it. The current default moves the image edge at
+several px/s, which you can see *and* still reads as calm. Raising `duration` calms it; the dwell is
+what makes it read as deliberate rather than as drift.
 
-Measured on a 1920x1080 desktop: `omarchy-shell` costs **11.8 %** of one core with the plugin on and
-**11.1 %** off — about **+0.8 %**, at ~14 fps, with no blur and no per-frame shader change.
+Measured on a 1920x1080 desktop: `omarchy-shell` costs **~11.8 %** of one core with the plugin on
+and **~11.1 %** off — about **+0.8 %**, at ~14 fps, with no blur and no per-frame shader change. The
+configuration adds no timers: the same single clock drives everything.
 
 ## How it works
 
@@ -66,32 +76,70 @@ omarchy plugin validate ~/.config/omarchy/plugins/gsus.animated-wallpaper   # ex
 omarchy-shell shell enablePlugin gsus.animated-wallpaper '{}'               # prints "ok"
 ```
 
+## Settings
+
+`settings.json` in the plugin directory is the single source of truth, and the service is its only
+writer — it both reads it (its `FileView` watches the file, so hand edits apply live) and writes it
+when the menu changes something.
+
+```json
+{
+  "enabled": true,
+  "duration": 20.0,
+  "maxZoom": 1.15,
+  "mode": "random",
+  "smoothEasing": true,
+  "pauseAtEnd": 2.0
+}
+```
+
+`Settings.js` is the only place defaults, limits and validation live, shared by `Service.qml` (which
+applies them) and `Menu.qml` (which edits them). Everything is clamped and whitelisted on read, so a
+hand-edited or corrupted file can never break the renderer: unknown keys are dropped, `maxZoom` stops
+at 1.30, an unknown `mode` falls back to `random`, and unparseable text becomes the defaults.
+
+The same values are reachable from a terminal — which is also how persistence is tested:
+
+```bash
+qs ipc call animated-wallpaper status                  # the live config as JSON
+qs ipc call animated-wallpaper setDuration 45
+qs ipc call animated-wallpaper setMode horizontal      # labels work too: "Horizontal"
+qs ipc call animated-wallpaper setMaxZoom 9            # clamped to 1.30 on write
+qs ipc call animated-wallpaper reset
+```
+
+Add `--pid "$(qs list --all | awk '/Process ID/{print $3; exit}')"` if `qs` cannot find the instance.
+
 ## Tune
 
-The knobs are the `readonly` properties at the top of `Service.qml`:
+Everything user-facing is in the menu (below) or `settings.json`. The remaining constants are the
+`readonly` properties at the top of `Service.qml`:
 
 | Property | Default | Meaning |
 |---|---|---|
-| `motion` | `0.07` | the zoom/pan dial: peak zoom is `1 + motion`. `0.03` barely alive, `0.12` obvious |
-| `scalePeriodMs` | `34000` | one in-and-out zoom — shorten it (not raise `motion`) to make the motion read faster |
-| `panPeriodMs` | `47000` | one pan orbit |
-| `panAmount` | `0.65` | fraction of the zoom slack the pan uses; 1.0 is the safe maximum |
 | `exposureDepth` / `exposurePeriodMs` | `0.025` / `22000` | the room-light breath |
 | `frameMs` | `70` | repaint interval (~14 fps); `140` = ~7 fps, still smooth |
+| `panSplit` | `0.5` | how much of the zoom slack the horizontal/vertical pan uses; 1.0 is the safe maximum |
+| `blendSec` | `2.0` | cross-fade when a `random` pair changes direction |
 | `revealMs` | `420` | wallpaper-change reveal (matches Omarchy) |
 
-To calm it down: `motion: 0.04`.
+To calm it down: `duration: 45`, `maxZoom: 1.08`.
 
 If the fine detail of a busy illustration shimmers (sub-pixel resampling on stippled line art),
-lengthen `panPeriodMs`, raise `scalePeriodMs` or lower `motion` — that shimmer is the price of a
-moving image.
+lengthen `duration` or lower `maxZoom` — that shimmer is the price of a moving image.
 
 ## Bar widget
 
 `BarWidget.qml` puts a button in the bar; `Menu.qml` is the small panel behind it, loaded lazily by
-the widget the way Omarchy's own clock plugin does it. The panel shows live state — animating or
-paused, the current zoom, the motion dial, the wallpaper file — and an **Animate** switch that stops
-and starts the drift (it flips `enabled` on the service, which freezes the clock).
+the widget the way Omarchy's own clock plugin does it. The panel is the settings UI: live state
+(animating or paused, the direction in play, the current zoom, the wallpaper file) and a control per
+parameter — **Animate**, a **Duration** slider (5–120 s), a **Zoom level** slider (1.05–1.30×), a
+**Pause at end** slider (0–10 s), the **Direction mode** dropdown, the **Smooth motion** toggle and a
+**Reset to defaults** button.
+
+Sliders write to the service on every move (so the wallpaper responds while you drag) but only touch
+the disk on release — writing on every pixel of a drag would rewrite the file dozens of times a
+second.
 
 ```bash
 omarchy bar put gsus.animated-wallpaper --section right --before omarchy.monitor   # place it
@@ -100,8 +148,29 @@ omarchy-shell shell summon gsus.animated-wallpaper '{}'                         
 omarchy-shell shell hide gsus.animated-wallpaper                                   # close it
 ```
 
-Rows for new actions go in the `Column` in `Menu.qml`; each one reads and writes state on the
-plugin's own service instance (`root.service`), which is the same object the wallpaper animates from.
+Rows for new actions go in the `Column` in `Menu.qml`; each one reads and writes state through
+`root.set(key, value)` / `root.flush()`, which go to the service — the same object the wallpaper
+animates from.
+
+## Tests
+
+```bash
+./tests/settings.test.sh    # 17 cases, seconds    -- the sanitiser, in node
+./tests/pose.test.sh        # 14 cases, ~2.5 min   -- the motion, from the plugin's own trace
+./tests/persist.test.sh     # 12 cases, ~40 s      -- write -> disk -> reload -> survives restart
+```
+
+`pose.test.sh` asserts against a **pose trace** the service logs while a config loads
+(`[animated-wallpaper] pose {...}`, bounded to 60 s so it cannot grow without end). The trace prints
+the exact properties the window consumes, which makes the assertions deterministic — a
+screenshot-based suite would need this desktop to be idle, and it belongs to a human. It checks that
+a dwell is really still (`spread = 0`), that the cycle period is `duration + pauseAtEnd`, that
+`horizontal`/`vertical` pin the zoom and sweep sideways, that `zoomIn` never pans, that the cosine
+ease ramps (peak/mean slope ≈ 1.55 against 1.00 for linear), and that `random` never jumps at a pair
+boundary.
+
+`persist.test.sh` drives the real write path over IPC — the same `set()`/`save()` pair the menu
+calls — then restarts the shell and re-reads the config.
 
 ## Disable / remove
 
@@ -144,7 +213,9 @@ Two more traps this plugin walked into, both worth knowing before adding a widge
   is root-owned).
 * No per-wallpaper art, no video wallpapers.
 * No cursor parallax (Quickshell 0.3.1 exposes no cursor position) and no audio reactivity yet.
-* No settings file: the dials are constants in `Service.qml`.
+* `duration` is one traverse, not a full round trip: a complete pair takes `2 × (duration +
+  pauseAtEnd)`. The menu's sliders have no keyboard focus yet, and the panel cursor does not walk
+  them — mouse only for now.
 
 ## History
 
@@ -156,3 +227,4 @@ Two more traps this plugin walked into, both worth knowing before adding a widge
 | 0.4 | the 0.1 glow removed — a static coloured haze fought the moving image |
 | 0.5 | everything additive gone: the glint band and the motes too. The image moving is the entire effect; `glow.png` and `make-glow.py` were deleted with them |
 | 0.6 | placeable in the bar: `BarWidget.qml` (button) + `Menu.qml` (small panel with live state and an Animate switch) |
+| 0.7 | configurable: the continuous sine becomes a cycle + dwell engine driven by `settings.json`, with sliders, a direction dropdown and an easing toggle in the menu, an IPC surface, and 43 test cases |
