@@ -45,8 +45,6 @@ Item {
   readonly property real panAmount: 0.65       // fraction of the zoom slack the pan uses
   readonly property real exposureDepth: 0.025  // room-light breath
   readonly property int exposurePeriodMs: 22000
-  readonly property real bloomIntensity: 0.14
-  readonly property int bloomPeriodMs: 9000
   readonly property real moteAlpha: 0.08
   readonly property int moteCount: 26
   readonly property real glintOpacity: 0.07    // travelling light band
@@ -76,12 +74,6 @@ Item {
   readonly property real panUnitY: panAmount * root.orbit(panPeriodMs * 0.8, 1.6)
 
   readonly property real exposure: exposureDepth * root.wave(exposurePeriodMs)
-  readonly property real bloom: bloomIntensity * root.wave(bloomPeriodMs)
-
-  // The haze wanders (and keeps a second, slower orbit) so the light moves
-  // around the screen instead of pulsing in place.
-  readonly property real bloomX: 0.5 + 0.13 * root.orbit(61000, 0)
-  readonly property real bloomY: 0.5 + 0.09 * root.orbit(79000, 2.1)
 
   readonly property real glintSweep: (clock % glintPeriodMs) / glintPeriodMs
   readonly property real glint: glintOpacity * Math.sin(Math.PI * glintSweep)
@@ -189,7 +181,7 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    console.log("[animated-wallpaper] ready v0.3: screens=" + Quickshell.screens.length
+    console.log("[animated-wallpaper] ready v0.4: screens=" + Quickshell.screens.length
       + " motion=" + root.motion + " scalePeriodMs=" + root.scalePeriodMs
       + " accent=" + root.accent)
   }
@@ -311,34 +303,10 @@ Item {
       }
 
       // --------------------------------------------------- ambient light
-      // Bloom: a soft accent-tinted haze that breathes *and wanders*, so the
-      // light in the room moves rather than pulsing in place.
-      Item {
-        id: bloom
-        width: win.width * 1.3
-        height: width
-        x: win.width * root.bloomX - width / 2
-        y: win.height * root.bloomY - height / 2
-        opacity: root.bloom
-
-        Image {
-          id: bloomTexture
-          anchors.fill: parent
-          source: Qt.resolvedUrl("glow.png")
-          fillMode: Image.PreserveAspectFit
-          visible: false
-        }
-
-        MultiEffect {
-          source: bloomTexture
-          anchors.fill: bloomTexture
-          colorization: 1.0
-          colorizationColor: root.accent
-        }
-      }
-
       // Glint: a wide, faint band of accent light crossing the screen every
       // 42 s. Faded in and out by sin(), so it never pops at the edges.
+      // (The v0.1 accent bloom is gone: it fought the wallpaper instead of
+      // moving with it. glow.png is still the motes' texture.)
       Rectangle {
         id: glint
         width: win.width * 0.5

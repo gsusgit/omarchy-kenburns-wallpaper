@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "gsus.animated-wallpaper",
   "name": "Animated Wallpaper",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "gsus",
-  "description": "A wallpaper that is faintly alive: the image itself drifts, the light breathes, dust floats. Works with every wallpaper and every theme.",
+  "description": "A wallpaper that is faintly alive: the image itself drifts, a band of light crosses it, dust floats. Works with every wallpaper and every theme.",
   "kinds": ["service"],
   "entryPoints": {
     "service": "Service.qml"
