@@ -55,6 +55,8 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
 scenario loop '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in"}'  21 loop 5.0 1.20
 scenario out  '{"enabled":true,"duration":5.0,"maxZoom":1.25,"direction":"out"}' 18 out  5.0 1.25
 scenario ease '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in"}'  13 ease 1.20
+# The drift is its own axis: any zoom can creep any way, including a diagonal.
+scenario driftDiag '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in","drift":"upLeft"}' 13 drift -1 -1
 
 echo "pose tests: $scenarios scenarios, $fails failures"
 exit $(( fails > 0 ))

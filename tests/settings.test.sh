@@ -18,11 +18,11 @@ run() {
   node tests/lib/run-settings.js "$1" 2>&1
 }
 
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in"}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in","drift":"center"}'
 
 # ---------------------------------------------------------------- the schema
 check "empty input gives the documented defaults" "$DEFAULT" "$(run 'S.sanitize({})')"
-check "the schema is exactly four values" 'enabled,duration,maxZoom,direction' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
+check "the schema is exactly five values" 'enabled,duration,maxZoom,direction,drift' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
 check "preset is gone" 'undefined' "$(run 'typeof S.sanitize({preset: "classicCinema"}).preset')"
 check "handheld is gone" 'undefined' "$(run 'typeof S.sanitize({handheld: true}).handheld')"
 check "breathing is gone" 'undefined' "$(run 'typeof S.sanitize({breathing: false}).breathing')"
@@ -31,8 +31,8 @@ check "pauseAtEnd is gone" 'undefined' "$(run 'typeof S.sanitize({pauseAtEnd: 3}
 check "mode is gone" 'undefined' "$(run 'typeof S.sanitize({mode: "random"}).mode')"
 
 # ------------------------------------------------------------------- clamping
-check "duration clamps to the 60 ceiling" '{"enabled":true,"duration":60,"maxZoom":1.15,"direction":"in"}' "$(run 'S.sanitize({duration: 500})')"
-check "duration below the floor clamps to 5" '{"enabled":true,"duration":5,"maxZoom":1.15,"direction":"in"}' "$(run 'S.sanitize({duration: 4})')"
+check "duration clamps to the 60 ceiling" '{"enabled":true,"duration":60,"maxZoom":1.15,"direction":"in","drift":"center"}' "$(run 'S.sanitize({duration: 500})')"
+check "duration below the floor clamps to 5" '{"enabled":true,"duration":5,"maxZoom":1.15,"direction":"in","drift":"center"}' "$(run 'S.sanitize({duration: 4})')"
 check "the duration ceiling is 60" '60' "$(run 'S.LIMITS.duration.max')"
 check "the duration floor is 5" '5' "$(run 'S.LIMITS.duration.min')"
 check "maxZoom clamps to the 1.30 cap" '1.3' "$(run 'S.sanitize({maxZoom: 9}).maxZoom')"
@@ -59,12 +59,31 @@ check "unreadable enabled keeps its default" 'true' "$(run 'S.sanitize({enabled:
 check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, duration: 20})')"
 check "garbage text parses to the defaults" "$DEFAULT" "$(run 'S.parse("not json at all")')"
 check "null parses to the defaults" "$DEFAULT" "$(run 'S.parse(null)')"
-check "an old v2 file keeps only what still exists" '{"enabled":true,"duration":42,"maxZoom":1.25,"direction":"out"}' \
+check "an old v2 file keeps only what still exists" '{"enabled":true,"duration":42,"maxZoom":1.25,"direction":"out","drift":"center"}' \
   "$(run 'S.sanitize({preset: "custom", enabled: true, duration: 42, maxZoom: 1.25, direction: "out", smoothEasing: true, handheld: true, breathing: true})')"
 
+# ------------------------------------------------------------------- drift
+check "the drift defaults to centre" 'center' "$(run 'S.sanitize({}).drift')"
+check "there are nine drift options" '9' "$(run 'S.DRIFTS.length')"
+check "a diagonal is accepted" 'upLeft' "$(run 'S.sanitize({drift: "upLeft"}).drift')"
+check "a hyphenated diagonal is accepted" 'upLeft' "$(run 'S.sanitize({drift: "up-left"}).drift')"
+check "a spaced diagonal is accepted" 'downRight' "$(run 'S.sanitize({drift: "Down Right"}).drift')"
+check "an unknown drift falls back to centre" 'center' "$(run 'S.sanitize({drift: "sideways"}).drift')"
+check "a removed direction is not a drift" 'center' "$(run 'S.sanitize({drift: "horizontal"}).drift')"
+check "the nine vectors are the compass points" 'center=0,0 left=-1,0 right=1,0 up=0,-1 down=0,1 upLeft=-1,-1 upRight=1,-1 downLeft=-1,1 downRight=1,1' \
+  "$(run 'S.DRIFTS.map(function(d){return d+"="+S.DRIFT_VECTORS[d].join(",")}).join(" ")')"
+check "the diana is laid out 3x3 with the dot in the middle" 'upLeft,up,upRight,left,center,right,downLeft,down,downRight' \
+  "$(run 'S.driftOptions().map(function(o){return o.value}).join(",")')"
+check "the centre option is a dot" '●' "$(run 'S.driftOptions()[4].label')"
+check "the diagonals are arrows" '↖,↗,↘,↙' "$(run '[S.DRIFT_LABELS.upLeft,S.DRIFT_LABELS.upRight,S.DRIFT_LABELS.downRight,S.DRIFT_LABELS.downLeft].join(",")')"
+check "every option carries a tooltip" 'true' "$(run 'S.driftOptions().every(function(o){return typeof o.tooltip === "string" && o.tooltip.length > 3})')"
+check "an unknown drift name yields no vector" '0,0' "$(run 'S.driftVector("nope").join(",")')"
+check "the centre vector is zero" '0,0' "$(run 'S.driftVector("center").join(",")')"
+check "serialise writes the drift" 'true' "$(run 'S.serialise({drift: "up"}).indexOf("\"drift\": \"up\"") > 0')"
+
 # --------------------------------------------------------------- serialising
-check "serialise round-trips canonically" '{"enabled":true,"duration":12,"maxZoom":1.25,"direction":"out"}' \
-  "$(run 'JSON.parse(S.serialise({duration: 12, maxZoom: 1.25, direction: "out"}))')"
+check "serialise round-trips canonically" '{"enabled":true,"duration":12,"maxZoom":1.25,"direction":"out","drift":"upLeft"}' \
+  "$(run 'JSON.parse(S.serialise({duration: 12, maxZoom: 1.25, direction: "out", drift: "upLeft"}))')"
 check "serialise never writes a removed key" 'false' \
   "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
 

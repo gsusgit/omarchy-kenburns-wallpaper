@@ -172,6 +172,45 @@ if MODE in ("loop", "out"):
             check(abs(first - 1.0) < 0.03, "direction in starts unzoomed",
                   "%.4f at seg %.3f" % (first, group[0]["seg"]))
 
+    # These scenarios set no drift, so the sanitiser's "center" default applies:
+    # a drift of centre must leave the image exactly where it was.
+    check(all(abs(s["x"]) < 1e-9 and abs(s["y"]) < 1e-9 for s in samples),
+          "with no drift there is no pan at all",
+          "max |x| = %.9f, max |y| = %.9f" % (max(abs(s["x"]) for s in samples),
+                                              max(abs(s["y"]) for s in samples)))
+
+elif MODE == "drift":
+    dx, dy = float(sys.argv[2]), float(sys.argv[3])
+    amount = 0.5                      # Service.qml's driftAmount
+    # The offset must be exactly the configured fraction of the margin the zoom
+    # opens. That identity is what makes a black edge impossible at any zoom or
+    # drift setting: the offset can never exceed the overhang it rides on.
+    dev_x = [abs(s["x"] - dx * amount * (s["z"] - 1) / 2) for s in samples]
+    dev_y = [abs(s["y"] - dy * amount * (s["z"] - 1) / 2) for s in samples]
+    check(max(dev_x) < 1e-6 and max(dev_y) < 1e-6,
+          "the drift is exactly its fraction of the zoom margin",
+          "max deviation %.8f / %.8f" % (max(dev_x), max(dev_y)))
+
+    worst = max((abs(s["x"]) / ((s["z"] - 1) / 2)) for s in samples if s["z"] > 1.0005)
+    check(worst <= 1.0 + 1e-9, "the image never pulls inside the window",
+          "worst offset/margin = %.3f" % worst)
+
+    # Visible, not theoretical: 0.03 of a 1920 px screen is ~58 px of travel.
+    check(max(abs(s["x"]) for s in samples) > 0.03, "the drift is actually there",
+          "max |x| = %.4f (%.0f px on 1920)" % (max(abs(s["x"]) for s in samples),
+                                                max(abs(s["x"]) for s in samples) * 1920))
+    if dx:
+        check(max(s["x"] for s in samples) <= 1e-9, "the drift goes the way it is told (x)")
+    if dy:
+        check(max(s["y"] for s in samples) <= 1e-9, "the drift goes the way it is told (y)")
+    # It rides the zoom, so it must vanish at the near pose rather than persist.
+    near = [s for s in samples if s["z"] < 1.01]
+    if near:
+        check(all(abs(s["x"]) < 0.005 for s in near), "the drift vanishes at the near pose",
+              "max |x| near zoom 1 = %.5f" % max(abs(s["x"]) for s in near))
+    else:
+        bad("samples near the unzoomed pose")
+
 elif MODE == "ease":
     target = float(sys.argv[2])
     # Independent reimplementation of the loop's own curve: one cosine over the

@@ -262,6 +262,61 @@ Panel {
 
         PanelSeparator { foreground: root.barForeground }
 
+        // -------------------------------------------------------- directions
+        PanelSectionHeader {
+          width: parent.width
+          text: "DIRECTIONS"
+          foreground: root.barForeground
+          fontFamily: root.fontFamily
+        }
+
+        Text {
+          width: parent.width
+          text: "Drift"
+          color: root.barForeground
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.bodySmall
+        }
+
+        // A 3x3 diana: the eight compass points plus the centre, so a diagonal is
+        // one click -- no angle to convert and no pair of axis values to reason
+        // about. ButtonGroup is a Row, so this is a Grid of the same chips;
+        // Button already brings focus and Enter/Space, and it centres its own
+        // content, which is why a chip wider than its glyph still reads as a
+        // button rather than as a left-aligned label.
+        Item {
+          width: parent.width
+          height: driftGrid.height
+
+          Grid {
+            id: driftGrid
+            anchors.horizontalCenter: parent.horizontalCenter
+            columns: 3
+            spacing: Style.spacing.sm
+
+            Repeater {
+              model: Settings.driftOptions()
+
+              delegate: Button {
+                required property var modelData
+                width: Style.spacing.controlHeight * 1.5
+                height: Style.spacing.controlHeight
+                text: modelData.label
+                tooltipText: modelData.tooltip
+                selected: root.draft.drift === modelData.value
+                bordered: true
+                foreground: root.barForeground
+                accent: Color.accent
+                background: "transparent"
+                fontFamily: root.fontFamily
+                onClicked: root.edit("drift", modelData.value)
+              }
+            }
+          }
+        }
+
+        PanelSeparator { foreground: root.barForeground }
+
         // ------------------------------------------------------ apply
         Button {
           id: applyBtn

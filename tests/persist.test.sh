@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in"}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in","drift":"center"}'
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -60,8 +60,8 @@ restore
 sleep 2
 check "status starts at the defaults" "$DEFAULT" "$(ipc status)"
 
-echo "-- the file holds exactly the four values"
-check "the key set is closed" 'direction,duration,enabled,maxZoom' \
+echo "-- the file holds exactly the five values"
+check "the key set is closed" 'direction,drift,duration,enabled,maxZoom' \
   "$(python3 -c "import json;print(','.join(sorted(json.load(open('$SETTINGS')).keys())))")"
 check "pauseAtEnd is not in the file" "keyerror" "$(disk pauseAtEnd 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "mode is not in the file" "keyerror" "$(disk mode 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
@@ -97,20 +97,28 @@ ipc setDirection out >/dev/null
 wait_for_disk "d['direction'] == 'out'" 6 && check "the direction switch persists" "out" "$(disk direction)" \
   || check "the direction switch persists" "out" "timeout"
 
+ipc setDrift upLeft >/dev/null
+wait_for_disk "d['drift'] == 'upLeft'" 6 && check "the drift persists" "upLeft" "$(disk drift)" \
+  || check "the drift persists" "upLeft" "timeout"
+
+ipc setDrift sideways >/dev/null
+wait_for_disk "d['drift'] == 'center'" 6 && check "an unknown drift falls back to centre" "center" "$(disk drift)" \
+  || check "an unknown drift falls back to centre" "center" "timeout"
+
 ipc setDuration 42 >/dev/null
 ipc setMaxZoom 1.25 >/dev/null
 wait_for_disk "d['maxZoom'] == 1.25" 6
 
 echo "-- surviving a restart (the acceptance criterion)"
 sleep 2
-check "the values are in place before the restart" "42|1.25|out" \
-  "$(disk duration)|$(disk maxZoom)|$(disk direction)"
+check "the values are in place before the restart" "42|1.25|out|center" \
+  "$(disk duration)|$(disk maxZoom)|$(disk direction)|$(disk drift)"
 omarchy-restart-shell >/dev/null 2>&1
 sleep 10
 SHELL_PID=$(qs list --all | awk '/Process ID/{print $3; exit}')
 check "the shell came back" "true" "$([[ -n $SHELL_PID ]] && echo true || echo false)"
-check "and the values survived the restart" "42|1.25|out" \
-  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live direction)"
+check "and the values survived the restart" "42|1.25|out|center" \
+  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live direction)|$(ipc status | live drift)"
 
 echo "-- reset"
 ipc reset >/dev/null

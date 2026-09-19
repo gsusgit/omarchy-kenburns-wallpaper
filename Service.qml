@@ -124,6 +124,7 @@ Item {
     function setDuration(value: string): void { root.applyIpc("duration", value) }
     function setMaxZoom(value: string): void { root.applyIpc("maxZoom", value) }
     function setDirection(value: string): void { root.applyIpc("direction", value) }
+    function setDrift(value: string): void { root.applyIpc("drift", value) }
 
     function reset(): void {
       root.config = Settings.sanitize({})
@@ -185,7 +186,9 @@ Item {
       t: Math.round(root.clock),
       cy: root.loopIndex,
       seg: Number(root.segment.toFixed(4)),
-      z: Number(root.zoom.toFixed(6))
+      z: Number(root.zoom.toFixed(6)),
+      x: Number(root.panOffsetX.toFixed(6)),
+      y: Number(root.panOffsetY.toFixed(6))
     }))
   }
 
@@ -220,6 +223,19 @@ Item {
   readonly property real startZoom: config.direction === "out" ? config.maxZoom : 1
   readonly property real endZoom: config.direction === "out" ? 1 : config.maxZoom
   readonly property real zoom: mix(startZoom, endZoom, progress)
+
+  // ------------------------------------------------------------------- drift
+  // Which way the image creeps while the zoom opens: an axis of its own, so any
+  // zoom can drift any way. The offset rides on the margin the zoom creates,
+  // (zoom - 1) / 2, never on absolute pixels -- so at zoom 1 there is no drift,
+  // and no combination of settings can pull the image inside the window and show
+  // a black edge.
+  readonly property var driftVector: Settings.driftVector(config.drift)
+  readonly property real driftAmount: 0.5                    // of the available margin
+  readonly property real panX: driftVector[0] * driftAmount
+  readonly property real panY: driftVector[1] * driftAmount
+  readonly property real panOffsetX: panX * (zoom - 1) / 2   // as a fraction of the screen
+  readonly property real panOffsetY: panY * (zoom - 1) / 2
 
   readonly property real exposure: exposureDepth * root.cosineWave(exposurePeriodMs)
 
@@ -376,6 +392,12 @@ Item {
         id: zoomLayer
         width: win.width
         height: win.height
+        // Drift first, zoom second, on one item: the offset moves the layer in
+        // the parent's coordinates and the scale is about the layer's own centre,
+        // which composes to the same thing as panning the scaled image -- so this
+        // needs no second layer.
+        x: root.panOffsetX * win.width
+        y: root.panOffsetY * win.height
         scale: root.zoom
         transformOrigin: Item.Center
 
