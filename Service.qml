@@ -78,17 +78,30 @@ Item {
   // The JSON travels as an argv entry (Quickshell passes `command` as a real
   // argv, so quotes and braces are safe), and the write is atomic: temp file in
   // the same directory, then rename over the target.
+  // The config this write will carry, captured when save() fires. The command reads
+  // this plain string instead of binding to root.config: a binding would let the
+  // argv change under a write that is already running, so the file could receive a
+  // config nobody asked to save at that moment.
+  property string pendingWrite: ""
+
   Process {
     id: settingsWriter
     command: ["sh", "-c",
       'umask 077; tmp="$1.tmp.$$"; trap \'rm -f "$tmp"\' EXIT; printf \'%s\\n\' "$2" > "$tmp" && mv -f "$tmp" "$1"',
-      "sh", root.settingsPath, Settings.serialise(root.config)]
+      "sh", root.settingsPath, root.pendingWrite]
     onExited: function(code) {
-      if (code !== 0) console.warn("[animated-wallpaper] settings write failed, exit " + code)
+      if (code !== 0) {
+        console.warn("[animated-wallpaper] settings write failed, exit " + code)
+      } else {
+        // Say what was written, on one line: the config is pretty-printed, and the
+        // journal keeps only the first line of a multi-line entry.
+        console.log("[animated-wallpaper] settings written: " + root.pendingWrite.replace(/\s+/g, " "))
+      }
     }
   }
 
   function save() {
+    root.pendingWrite = Settings.serialise(root.config)
     settingsWriter.running = false      // a newer save supersedes one in flight
     settingsWriter.running = true
   }

@@ -22,9 +22,19 @@ DEFAULT='{"enabled":true,"speed":40.0,"maxZoom":1.15,"drift":"center"}'
 # there when they started: wiping a human's settings is not a test's business.
 BACKUP="$(mktemp)"
 [[ -s "$SETTINGS" ]] && cp "$SETTINGS" "$BACKUP"
+norm() { python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin),sort_keys=True))' 2>/dev/null; }
 cleanup() {
-  if [[ -s "$BACKUP" ]]; then cp "$BACKUP" "$SETTINGS"; else printf '%s\n' "$DEFAULT" > "$SETTINGS"; fi
+  local want
+  if [[ -s "$BACKUP" ]]; then want=$(cat "$BACKUP"); else want="$DEFAULT"; fi
+  printf '%s\n' "$want" > "$SETTINGS"
   rm -f "$BACKUP"
+  # The service is the only writer and keeps its own copy in memory, so a write
+  # already on its way can land after this restore. Check that it stuck, and say so
+  # loudly if it did not: a silent wipe of a human's settings is the one failure
+  # these suites must never have.
+  sleep 2
+  [[ "$(printf '%s' "$want" | norm)" == "$(cat "$SETTINGS" | norm)" ]] \
+    || printf '  WARN  the settings file did not keep the restore: %s\n' "$(tr -d '\n ' < "$SETTINGS")" >&2
 }
 trap cleanup EXIT
 

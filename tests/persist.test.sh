@@ -33,11 +33,25 @@ ipc() {
   return 1
 }
 
+norm() { python3 -c 'import json,sys;print(json.dumps(json.load(sys.stdin),sort_keys=True))' 2>/dev/null; }
 restore() {
   # Put back whatever was there when the run started: this suite writes the same
   # file the panel writes, and wiping a human's settings is not a test's business.
   if [[ -s "$BACKUP" ]]; then cp "$BACKUP" "$SETTINGS"; else printf '%s\n' "$DEFAULT" > "$SETTINGS"; fi
   rm -f "$BACKUP"
+  # A file-level restore is not the whole story: the service is the only writer and
+  # keeps its own copy in memory, so a write already on its way can land after this
+  # cp -- the suite's own `reset` leaves the defaults in that memory. Check that the
+  # file and the service agree, and say so loudly if they do not: a silent wipe of a
+  # human's settings is the one failure this suite must never have.
+  sleep 2
+  local want got
+  want=$(cat "$SETTINGS" | norm)
+  if [[ -n ${SHELL_PID:-} ]]; then
+    got=$(ipc status 2>/dev/null | norm)
+    [[ "$want" == "$got" ]] \
+      || printf '  WARN  file and service disagree after the restore: file=%s service=%s\n' "$want" "$got" >&2
+  fi
 }
 BACKUP="$(mktemp)"
 [[ -s "$SETTINGS" ]] && cp "$SETTINGS" "$BACKUP"
