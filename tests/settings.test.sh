@@ -31,6 +31,9 @@ check "maxZoom below the floor clamps to 1.05" \
 check "duration clamps to the 120 ceiling" \
   '{"enabled":true,"duration":120,"maxZoom":1.15,"mode":"random","smoothEasing":true,"pauseAtEnd":2}' \
   "$(run 'S.sanitize({duration: 500})')"
+check "duration below the floor clamps to 5" \
+  '{"enabled":true,"duration":5,"maxZoom":1.15,"mode":"random","smoothEasing":true,"pauseAtEnd":2}' \
+  "$(run 'S.sanitize({duration: 4})')"
 check "pauseAtEnd clamps to the 0 floor" \
   '{"enabled":true,"duration":20,"maxZoom":1.15,"mode":"random","smoothEasing":true,"pauseAtEnd":0}' \
   "$(run 'S.sanitize({pauseAtEnd: -3})')"

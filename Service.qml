@@ -5,6 +5,7 @@ import Quickshell.Wayland
 import QtQuick.Effects
 import QtQuick.Shapes
 import qs.Commons
+import "Settings.js" as Settings
 
 // Animated wallpaper.
 //
@@ -14,15 +15,13 @@ import qs.Commons
 // same crop, same scale, so a disabled plugin or a failed image load looks
 // like nothing happened instead of looking broken.
 //
+// The move is a Ken Burns segment: a cycle is one traverse (`duration`) plus a
+// dwell (`pauseAtEnd`), and a pair is two cycles, out and back, so a pair always
+// ends on the pose it started from and a fixed mode can never jump.
+//
 // Every animated value is a pure function of one accumulating clock, so the
 // repaint rate is ours (frameMs) instead of the compositor's, and there is
-// exactly one timer in the plugin.
-//
-// The window is deliberately inline rather than a separate file component:
-// Quickshell's Variants delegate model only initialises the model roles
-// (modelData) for delegates it can see, so a separate component silently gets
-// an undefined screen and never maps. Omarchy's own background plugin is
-// written the same way for the same reason.
+// exactly one per-frame timer in the plugin. Nothing here allocates per frame.
 Item {
   id: root
 
@@ -31,56 +30,160 @@ Item {
   property string omarchyPath: ""
   property var manifest: null
 
-  // ------------------------------------------------------------ taste dial
-  // `motion` is the zoom/pan dial: the image breathes 1.000 <-> 1.070 every
-  // 34 s, which moves the image edge at up to ~4 px/s -- the point where you
-  // can see it moving when you look at it, without it reading as a screensaver.
-  //  0.03 barely alive | 0.07 shipped | 0.12 obvious
-  // Speed matters more than size: 2% over 90 s is 0.7 px/s and no eye catches
-  // that, which is why this used to be invisible.
-  readonly property real motion: 0.07
+  // ---------------------------------------------------------- internal dials
+  // Deliberately not user-configurable: the frame budget, the room-light breath
+  // (unrelated to the Ken Burns move) and Omarchy's own reveal timing.
   readonly property int frameMs: 70            // repaint interval (~14 fps)
-  readonly property int scalePeriodMs: 34000   // one in-and-out zoom
-  readonly property int panPeriodMs: 47000     // one pan orbit
-  readonly property real panAmount: 0.65       // fraction of the zoom slack the pan uses
-  readonly property real exposureDepth: 0.025  // room-light breath
+  readonly property real exposureDepth: 0.025
   readonly property int exposurePeriodMs: 22000
-  readonly property int revealMs: 420          // Omarchy's own reveal duration
+  readonly property int revealMs: 420
+  readonly property real panSplit: 0.5         // pan extent as a fraction of the zoom slack
+  readonly property real blendSec: 2.0         // pose cross-fade when a random pair changes variant
+  readonly property int traceMs: 150           // pose trace interval (tests read it)
+  readonly property int traceWindowMs: 60000   // trace is bounded: no line-per-second forever
 
-  // The bar widget's panel flips this. Paused freezes the clock, so every
-  // animated value stops where it is -- the wallpaper keeps being painted, it
-  // just stops moving.
-  property bool enabled: true
+  readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "gsus.animated-wallpaper"
+  readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + pluginId
+
+  // ------------------------------------------------------- user configuration
+  // settings.json is the single source of truth; Settings.js clamps everything,
+  // so `config` is always complete and in range whatever is on disk.
+  property var config: Settings.sanitize({})
+  property bool enabled: true                  // mirrors config.enabled
+
+  function applyConfig(rawText) {
+    var parsed = Settings.parse(rawText)
+    root.config = parsed
+    root.enabled = parsed.enabled
+    console.log("[animated-wallpaper] config: " + JSON.stringify(parsed))
+    root.startTrace()
+  }
+
+  // A config change restarts the cycle, so the new values apply from a pose you
+  // can predict instead of mid-segment.
+  onConfigChanged: {
+    root.clock = 0
+    root.lastTickMs = 0
+  }
+
+  FileView {
+    id: configFile
+    path: root.pluginDir + "/settings.json"
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.applyConfig(text())
+    onLoadFailed: function(error) {
+      console.warn("[animated-wallpaper] settings.json unreadable, using defaults: " + error)
+      root.applyConfig("")
+    }
+    onFileChanged: reload()
+  }
+
+  // A bounded trace of the pose. It prints the very properties the window
+  // consumes, which is what tests/pose.test.sh asserts against -- the screen
+  // belongs to the user, so a test that needs it to be idle would be flaky.
+  property bool tracing: false
+
+  function startTrace() {
+    root.tracing = true
+    traceOff.restart()
+  }
+
+  Timer {
+    id: traceOff
+    interval: root.traceWindowMs
+    repeat: false
+    onTriggered: root.tracing = false
+  }
+
+  Timer {
+    interval: root.traceMs
+    running: root.tracing
+    repeat: true
+    onTriggered: console.log("[animated-wallpaper] pose " + JSON.stringify({
+      t: Math.round(root.clock),
+      cy: root.cycleIndex,
+      pair: root.pairIndex,
+      var: root.variant,
+      seg: Number(root.segment.toFixed(4)),
+      e: Number(root.eased.toFixed(4)),
+      z: Number(root.zoom.toFixed(6)),
+      x: Number(root.panX.toFixed(6)),
+      y: Number(root.panY.toFixed(6))
+    }))
+  }
 
   readonly property string home: Quickshell.env("HOME")
   readonly property string stateDir: home + "/.local/state/omarchy/current"
   readonly property string currentLink: stateDir + "/background"
 
-  // ---------------------------------------------------------------- values
+  // ------------------------------------------------------------- Ken Burns pose
+  readonly property real cycleSec: Math.max(1, config.duration + config.pauseAtEnd)
+  readonly property real cycleMs: cycleSec * 1000
+  readonly property real pairMs: cycleMs * 2
+  readonly property int cycleIndex: Math.floor(clock / cycleMs)
+  readonly property int pairIndex: Math.floor(clock / pairMs)
+  readonly property bool forwardCycle: (cycleIndex % 2) === 0
+  readonly property real inCycleSec: (clock % cycleMs) / 1000
+  readonly property real inPairSec: (clock % pairMs) / 1000
+  readonly property real segment: Math.max(0, Math.min(1, inCycleSec / Math.max(0.5, config.duration)))
+  readonly property real eased: config.smoothEasing
+    ? 0.5 - 0.5 * Math.cos(Math.PI * segment)
+    : segment
+
+  readonly property string variant: Settings.variantForPair(pairIndex, config.mode)
+  readonly property string previousVariant: Settings.variantForPair(Math.max(0, pairIndex - 1), config.mode)
+  // Cross-fade the pose when a random pair changes variant, so the switch is
+  // never a jump. Zero whenever the variant is unchanged (every fixed mode).
+  readonly property real blend: variant !== previousVariant
+    ? Math.max(0, 1 - inPairSec / blendSec)
+    : 0
+
+  function mix(a, b, t) { return a + (b - a) * t }
+  function startZoom(v) { return v === "zoomOut" || v === "horizontal" || v === "vertical" ? config.maxZoom : 1 }
+  function endZoom(v) { return v === "zoomOut" ? 1 : config.maxZoom }
+  function startX(v) { return v === "horizontal" ? -panSplit : 0 }
+  function endX(v) { return v === "horizontal" ? panSplit : 0 }
+  function startY(v) { return v === "vertical" ? -panSplit : 0 }
+  function endY(v) { return v === "vertical" ? panSplit : 0 }
+
+  function variantZoom(v) { return mix(startZoom(v), endZoom(v), forwardCycle ? eased : 1 - eased) }
+  function variantX(v) { return mix(startX(v), endX(v), forwardCycle ? eased : 1 - eased) }
+  function variantY(v) { return mix(startY(v), endY(v), forwardCycle ? eased : 1 - eased) }
+
+  // `blend` weighs how much of the *previous* pair's start pose is still in
+  // play, so it is the second argument: at 0 the running pose wins, at 1 the
+  // hand-off pose does. Getting this order wrong freezes the pose at the start
+  // of every cycle (the fixed modes never blend), which is exactly how it broke
+  // the first time -- the pose trace caught it, not the eye.
+  readonly property real zoom: mix(variantZoom(variant), startZoom(previousVariant), blend)
+  readonly property real panX: mix(variantX(variant), startX(previousVariant), blend)
+  readonly property real panY: mix(variantY(variant), startY(previousVariant), blend)
+
   function wave(periodMs) {
     return 0.5 - 0.5 * Math.cos(2 * Math.PI * (root.clock % periodMs) / periodMs)
   }
 
-  function orbit(periodMs, phase) {
-    return Math.sin(2 * Math.PI * ((root.clock % periodMs) / periodMs) + (phase || 0))
-  }
-
-  readonly property real zoom: 1 + motion * root.wave(scalePeriodMs)
-
-  // The pan is a fraction of the slack the zoom creates, so the image always
-  // covers the screen: no pan at all while the zoom is at its minimum, which
-  // is what keeps a black edge from ever showing up.
-  readonly property real panUnitX: panAmount * root.orbit(panPeriodMs, 0)
-  readonly property real panUnitY: panAmount * root.orbit(panPeriodMs * 0.8, 1.6)
-
   readonly property real exposure: exposureDepth * root.wave(exposurePeriodMs)
 
   property real clock: 0
+  property real lastTickMs: 0
+
+  onEnabledChanged: root.lastTickMs = 0
+
   Timer {
     interval: root.frameMs
     running: root.enabled
     repeat: true
-    onTriggered: root.clock += root.frameMs
+    // Real elapsed time, not a tick count: a Timer that slips when the shell is
+    // busy must not stretch `duration: 20` into 30 real seconds. lastTickMs is
+    // discarded on pause and on a config change so the first tick after either
+    // cannot add a huge delta.
+    onTriggered: {
+      var now = Date.now()
+      if (root.lastTickMs > 0) root.clock += (now - root.lastTickMs)
+      root.lastTickMs = now
+    }
   }
 
   // ------------------------------------------------------- wallpaper state
@@ -104,6 +207,8 @@ Item {
     root.displayPath = root.incomingPath
     root.incomingPath = ""
     root.revealProgress = 1
+    root.clock = 0          // a new image starts a fresh Ken Burns move
+    root.lastTickMs = 0
   }
 
   function imageUrl(path) {
@@ -178,9 +283,8 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    console.log("[animated-wallpaper] ready v0.6: screens=" + Quickshell.screens.length
-      + " motion=" + root.motion + " scalePeriodMs=" + root.scalePeriodMs
-      + " enabled=" + root.enabled)
+    console.log("[animated-wallpaper] ready v0.7: screens=" + Quickshell.screens.length
+      + " config=" + JSON.stringify(root.config))
   }
 
   Variants {
@@ -211,11 +315,12 @@ Item {
       // Pan first, zoom second: two nested items instead of a transform list,
       // so the pan stays linear while the zoom scales around the centre. The
       // surface clips whatever leaves the screen, which is what makes a zoom
-      // read as a zoom.
+      // read as a zoom. Pan is a fraction of the slack the zoom creates, so the
+      // image always covers the screen and no black edge can ever show up.
       Item {
         id: panLayer
-        x: root.panUnitX * (root.zoom - 1) / 2 * win.width
-        y: root.panUnitY * (root.zoom - 1) / 2 * win.height
+        x: root.panX * (root.zoom - 1) / 2 * win.width
+        y: root.panY * (root.zoom - 1) / 2 * win.height
         width: win.width
         height: win.height
 
