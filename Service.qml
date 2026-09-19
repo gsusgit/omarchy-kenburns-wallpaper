@@ -107,7 +107,12 @@ Item {
   // better (`qs ipc call animated-wallpaper setSpeed 50`) and a typo in the
   // key cannot reach the config. Note when linting: use /usr/lib/qt6/bin/qmllint
   // -- the /usr/bin/qmllint on this box is Qt5's (5.15) and crashes silently
-  // (exit 255, no message) on Quickshell's Qt6 types.
+  // (exit 255, no message) on Quickshell's Qt6 types. Run it as
+  // `/usr/lib/qt6/bin/qmllint -I /usr/share/omarchy/shell Service.qml Menu.qml`:
+  // it exits 0 and prints ~100 warnings, almost all of them from `qs.Ui` /
+  // `qs.Commons` failing to resolve outside the running shell (plus the
+  // `unqualified` noise that cascades from it). The exit code and any `Error:`
+  // line are the signal; the warning count is not.
   function applyIpc(key, value) {
     var v = value
     if (value === "true") v = true
