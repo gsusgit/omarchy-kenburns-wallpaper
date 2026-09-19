@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in","drift":"center","driftLength":0.5}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"drift":"center","driftLength":0.5}'
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -33,7 +33,14 @@ ipc() {
   return 1
 }
 
-restore() { printf '%s\n' "$DEFAULT" > "$SETTINGS"; }
+restore() {
+  # Put back whatever was there when the run started: this suite writes the same
+  # file the panel writes, and wiping a human's settings is not a test's business.
+  if [[ -s "$BACKUP" ]]; then cp "$BACKUP" "$SETTINGS"; else printf '%s\n' "$DEFAULT" > "$SETTINGS"; fi
+  rm -f "$BACKUP"
+}
+BACKUP="$(mktemp)"
+[[ -s "$SETTINGS" ]] && cp "$SETTINGS" "$BACKUP"
 trap restore EXIT
 
 SHELL_PID=$(qs list --all | awk '/Process ID/{print $3; exit}')
@@ -56,12 +63,12 @@ wait_for_disk() { # wait_for_disk <python expr> <seconds>
 disk() { python3 -c "import json;print(json.load(open('$SETTINGS'))['$1'])"; }
 live() { python3 -c "import json,sys;print(json.load(sys.stdin)['$1'])"; }
 
-restore
+printf '%s\n' "$DEFAULT" > "$SETTINGS"     # a known baseline to assert against
 sleep 2
 check "status starts at the defaults" "$DEFAULT" "$(ipc status)"
 
-echo "-- the file holds exactly the six values"
-check "the key set is closed" 'direction,drift,driftLength,duration,enabled,maxZoom' \
+echo "-- the file holds exactly the five values"
+check "the key set is closed" 'drift,driftLength,duration,enabled,maxZoom' \
   "$(python3 -c "import json;print(','.join(sorted(json.load(open('$SETTINGS')).keys())))")"
 check "pauseAtEnd is not in the file" "keyerror" "$(disk pauseAtEnd 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "mode is not in the file" "keyerror" "$(disk mode 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
@@ -88,14 +95,6 @@ wait_for_disk "d['duration'] == 5" 6 && check "duration is clamped up to the 5 s
 ipc setMaxZoom 9 >/dev/null             # far above the 1.30 cap
 wait_for_disk "d['maxZoom'] == 1.3" 6 && check "maxZoom is clamped to the 1.30 cap" "1.3" "$(disk maxZoom)" \
   || check "maxZoom is clamped to the 1.30 cap" "1.3" "timeout"
-
-ipc setDirection side >/dev/null
-wait_for_disk "d['direction'] == 'in'" 6 && check "an unknown direction falls back to in" "in" "$(disk direction)" \
-  || check "an unknown direction falls back to in" "in" "timeout"
-
-ipc setDirection out >/dev/null
-wait_for_disk "d['direction'] == 'out'" 6 && check "the direction switch persists" "out" "$(disk direction)" \
-  || check "the direction switch persists" "out" "timeout"
 
 ipc setDrift upLeft >/dev/null
 wait_for_disk "d['drift'] == 'upLeft'" 6 && check "the drift persists" "upLeft" "$(disk drift)" \
@@ -126,14 +125,14 @@ wait_for_disk "d['maxZoom'] == 1.25" 6
 
 echo "-- surviving a restart (the acceptance criterion)"
 sleep 2
-check "the values are in place before the restart" "42|1.25|out|center|0.8" \
-  "$(disk duration)|$(disk maxZoom)|$(disk direction)|$(disk drift)|$(disk driftLength)"
+check "the values are in place before the restart" "42|1.25|center|0.8" \
+  "$(disk duration)|$(disk maxZoom)|$(disk drift)|$(disk driftLength)"
 omarchy-restart-shell >/dev/null 2>&1
 sleep 10
 SHELL_PID=$(qs list --all | awk '/Process ID/{print $3; exit}')
 check "the shell came back" "true" "$([[ -n $SHELL_PID ]] && echo true || echo false)"
-check "and the values survived the restart" "42|1.25|out|center|0.8" \
-  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live direction)|$(ipc status | live drift)|$(ipc status | live driftLength)"
+check "and the values survived the restart" "42|1.25|center|0.8" \
+  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live drift)|$(ipc status | live driftLength)"
 
 echo "-- reset"
 ipc reset >/dev/null

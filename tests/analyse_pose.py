@@ -106,10 +106,9 @@ def rates(group):
     return mean(out), mean(back)
 
 
-if MODE in ("loop", "out"):
+if MODE == "loop":
     duration = float(sys.argv[2])
     target = float(sys.argv[3])
-    descending = MODE == "out"
     check(len(complete) >= 3, "at least three complete loops observed",
           "complete=%d of %d" % (len(complete), len(cycle_ids)))
 
@@ -162,15 +161,14 @@ if MODE in ("loop", "out"):
             falling = all(b <= a + 1e-9 for a, b in zip(values, values[1:]))
             check(rising or falling, "loop %d: the %s half moves one way" % (cy, name))
 
+    # There is no zoom-direction setting any more: the loop always starts from the
+    # whole image, because "in" and "out" were the same oscillation half a period
+    # apart and could only ever pick the starting pose.
     if complete:
         cy, group = complete[0]
         first = group[0]["z"]
-        if descending:
-            check(abs(first - target) < 0.03, "direction out starts zoomed in",
-                  "%.4f at seg %.3f" % (first, group[0]["seg"]))
-        else:
-            check(abs(first - 1.0) < 0.03, "direction in starts unzoomed",
-                  "%.4f at seg %.3f" % (first, group[0]["seg"]))
+        check(abs(first - 1.0) < 0.03, "the loop starts from the whole image",
+              "%.4f at seg %.3f" % (first, group[0]["seg"]))
 
     # These scenarios set no drift, so the sanitiser's "center" default applies:
     # a drift of centre must leave the image exactly where it was.

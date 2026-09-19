@@ -17,9 +17,10 @@ import "Settings.js" as Settings
 //
 // The move is a Ken Burns loop, and the zoom is the whole of it: one loop takes
 // the zoom out to the far pose and brings it back along a single cosine, so the
-// motion never stops and never jumps. `direction` decides which pose the loop
-// starts from: In grows from the whole image into the crop, Out starts inside the
-// crop and pulls back out of it.
+// motion never stops and never jumps. There is no zoom-direction control, and
+// that is deliberate: with a symmetric loop, "in" and "out" are the same
+// oscillation half a period apart, so the switch could only choose the pose you
+// start on -- invisible within seconds of a loop that never stops.
 //
 // Every animated value is a pure function of one accumulating clock, so the
 // repaint rate is ours (frameMs) instead of the compositor's, and there is
@@ -123,7 +124,6 @@ Item {
     function setEnabled(value: string): void { root.applyIpc("enabled", value) }
     function setDuration(value: string): void { root.applyIpc("duration", value) }
     function setMaxZoom(value: string): void { root.applyIpc("maxZoom", value) }
-    function setDirection(value: string): void { root.applyIpc("direction", value) }
     function setDrift(value: string): void { root.applyIpc("drift", value) }
     function setDriftLength(value: string): void { root.applyIpc("driftLength", value) }
 
@@ -221,9 +221,10 @@ Item {
 
   function mix(a, b, t) { return a + (b - a) * t }
 
-  readonly property real startZoom: config.direction === "out" ? config.maxZoom : 1
-  readonly property real endZoom: config.direction === "out" ? 1 : config.maxZoom
-  readonly property real zoom: mix(startZoom, endZoom, progress)
+  // The loop always runs 1 -> maxZoom -> 1, so it starts and ends on the whole
+  // image: no zoom-direction setting could change anything but the pose you land
+  // on when the config is applied.
+  readonly property real zoom: mix(1, config.maxZoom, progress)
 
   // ------------------------------------------------------------------- drift
   // Which way the image creeps while the zoom opens: an axis of its own, so any

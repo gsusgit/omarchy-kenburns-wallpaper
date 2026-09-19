@@ -12,19 +12,12 @@
 // inert) and `smoothEasing` (ease-in-out is simply the better default; the toggle
 // only offered a worse one).
 //
-// Four values remain, and each one changes something you can see: whether it
-// moves, how long the loop takes, how far it zooms, and which way.
-
-var DIRECTIONS = ["in", "out"]
-
-var DIRECTION_LABELS = { in: "In", out: "Out" }
-
-function directionOptions() {
-  var out = []
-  for (var i = 0; i < DIRECTIONS.length; i++)
-    out.push({ value: DIRECTIONS[i], label: DIRECTION_LABELS[DIRECTIONS[i]] })
-  return out
-}
+// Five values remain, and each one changes something you can see: whether it
+// moves, how long the loop takes, how far it zooms, which way it drifts, and how
+// far. There is no zoom-direction control: with a symmetric loop, "in" and "out"
+// are the same oscillation half a period apart, so the switch could only ever
+// choose the pose you start on -- and the loop never stops, so that is invisible
+// within seconds.
 
 // The drift is the move's other axis: which way the image creeps while the zoom
 // opens. It is a vector, so the eight compass points plus "centre" cover every
@@ -86,7 +79,6 @@ var DEFAULTS = {
   enabled: true,
   duration: 20.0,
   maxZoom: 1.15,
-  direction: "in",
   drift: "center",
   driftLength: 0.5
 }
@@ -144,15 +136,6 @@ function bool(value, fallback) {
   return fallback
 }
 
-function normaliseDirection(value) {
-  var raw = String(value === undefined || value === null ? "" : value).trim().toLowerCase()
-  for (var i = 0; i < DIRECTIONS.length; i++) {
-    if (DIRECTIONS[i] === raw) return DIRECTIONS[i]
-    if (DIRECTION_LABELS[DIRECTIONS[i]].toLowerCase() === raw) return DIRECTIONS[i]
-  }
-  return DEFAULTS.direction
-}
-
 function normaliseDrift(value) {
   var raw = String(value === undefined || value === null ? "" : value).trim()
   var lower = raw.toLowerCase().replace(/[\s_-]/g, "")
@@ -172,7 +155,6 @@ function sanitize(raw) {
     enabled: bool(input.enabled, DEFAULTS.enabled),
     duration: number(input.duration, LIMITS.duration.min, LIMITS.duration.max, DEFAULTS.duration),
     maxZoom: number(input.maxZoom, LIMITS.maxZoom.min, LIMITS.maxZoom.max, DEFAULTS.maxZoom),
-    direction: normaliseDirection(input.direction),
     drift: normaliseDrift(input.drift),
     driftLength: number(input.driftLength, LIMITS.driftLength.min, LIMITS.driftLength.max, DEFAULTS.driftLength)
   }

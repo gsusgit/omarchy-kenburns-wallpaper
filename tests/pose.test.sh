@@ -1,5 +1,5 @@
 #!/bin/bash
-# Behaviour tests for the Ken Burns engine (v3.0: duration, maxZoom, direction).
+# Behaviour tests for the Ken Burns engine (v3.2: duration, maxZoom, drift, driftLength).
 #
 # They read the plugin's own pose trace (a bounded 60 s trace started on every
 # config load) out of the journal instead of taking screenshots: the trace
@@ -17,8 +17,15 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
-DEFAULT='{"enabled":true,"duration":20.0,"maxZoom":1.15,"direction":"in"}'
-cleanup() { printf '%s\n' "$DEFAULT" > "$SETTINGS"; }
+DEFAULT='{"enabled":true,"duration":20.0,"maxZoom":1.15,"drift":"center","driftLength":0.5}'
+# These suites write the same file the panel writes, so they put back whatever was
+# there when they started: wiping a human's settings is not a test's business.
+BACKUP="$(mktemp)"
+[[ -s "$SETTINGS" ]] && cp "$SETTINGS" "$BACKUP"
+cleanup() {
+  if [[ -s "$BACKUP" ]]; then cp "$BACKUP" "$SETTINGS"; else printf '%s\n' "$DEFAULT" > "$SETTINGS"; fi
+  rm -f "$BACKUP"
+}
 trap cleanup EXIT
 
 fails=0
@@ -71,15 +78,14 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
 }
 
 # duration 5 is the floor and keeps the suite short, so a loop is exactly 5 s
-# (3.75 s of main leg + 1.25 s of return) and the capture windows are whole
-# numbers of loops plus a margin.
-scenario loop '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in"}'  21 loop 5.0 1.20
-scenario out  '{"enabled":true,"duration":5.0,"maxZoom":1.25,"direction":"out"}' 18 out  5.0 1.25
-scenario ease '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in"}'  13 ease 1.20
+# (2.5 s out + 2.5 s back) and the capture windows are whole numbers of loops
+# plus a margin.
+scenario loop '{"enabled":true,"duration":5.0,"maxZoom":1.20}'  21 loop 5.0 1.20
+scenario ease '{"enabled":true,"duration":5.0,"maxZoom":1.20}'  13 ease 1.20
 # The drift is its own axis: any zoom can creep any way, including a diagonal.
 # The two scenarios differ only in length, which is what the length control is.
-scenario driftDiag  '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in","drift":"upLeft"}' 13 drift -1 -1 0.5
-scenario driftShort '{"enabled":true,"duration":5.0,"maxZoom":1.20,"direction":"in","drift":"right","driftLength":0.2}' 13 drift 1 0 0.2
+scenario driftDiag  '{"enabled":true,"duration":5.0,"maxZoom":1.20,"drift":"upLeft"}' 13 drift -1 -1 0.5
+scenario driftShort '{"enabled":true,"duration":5.0,"maxZoom":1.20,"drift":"right","driftLength":0.2}' 13 drift 1 0 0.2
 
 echo "pose tests: $scenarios scenarios, $fails failures"
 exit $(( fails > 0 ))

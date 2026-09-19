@@ -187,32 +187,8 @@ Panel {
           fontFamily: root.fontFamily
         }
 
-        Text {
-          width: parent.width
-          text: "Direction"
-          color: root.barForeground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-        }
-
-        ButtonGroup {
-          options: Settings.directionOptions()
-          value: root.draft.direction
-          foreground: root.barForeground
-          accent: Color.accent
-          background: "transparent"
-          fontFamily: root.fontFamily
-          onChanged: function(v) { root.edit("direction", v) }
-        }
-
-        Text {
-          width: parent.width
-          text: "Level  " + root.draft.maxZoom.toFixed(2) + "x"
-          color: root.barForeground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-        }
-
+        // The section header names the value, and it is the only control here, so
+        // it needs no row label of its own.
         PanelSlider {
           width: parent.width
           bar: root.bar

@@ -18,11 +18,11 @@ run() {
   node tests/lib/run-settings.js "$1" 2>&1
 }
 
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in","drift":"center","driftLength":0.5}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"drift":"center","driftLength":0.5}'
 
 # ---------------------------------------------------------------- the schema
 check "empty input gives the documented defaults" "$DEFAULT" "$(run 'S.sanitize({})')"
-check "the schema is exactly six values" 'enabled,duration,maxZoom,direction,drift,driftLength' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
+check "the schema is exactly five values" 'enabled,duration,maxZoom,drift,driftLength' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
 check "preset is gone" 'undefined' "$(run 'typeof S.sanitize({preset: "classicCinema"}).preset')"
 check "handheld is gone" 'undefined' "$(run 'typeof S.sanitize({handheld: true}).handheld')"
 check "breathing is gone" 'undefined' "$(run 'typeof S.sanitize({breathing: false}).breathing')"
@@ -31,20 +31,18 @@ check "pauseAtEnd is gone" 'undefined' "$(run 'typeof S.sanitize({pauseAtEnd: 3}
 check "mode is gone" 'undefined' "$(run 'typeof S.sanitize({mode: "random"}).mode')"
 
 # ------------------------------------------------------------------- clamping
-check "duration clamps to the 60 ceiling" '{"enabled":true,"duration":60,"maxZoom":1.15,"direction":"in","drift":"center","driftLength":0.5}' "$(run 'S.sanitize({duration: 500})')"
-check "duration below the floor clamps to 5" '{"enabled":true,"duration":5,"maxZoom":1.15,"direction":"in","drift":"center","driftLength":0.5}' "$(run 'S.sanitize({duration: 4})')"
+check "duration clamps to the 60 ceiling" '{"enabled":true,"duration":60,"maxZoom":1.15,"drift":"center","driftLength":0.5}' "$(run 'S.sanitize({duration: 500})')"
+check "duration below the floor clamps to 5" '{"enabled":true,"duration":5,"maxZoom":1.15,"drift":"center","driftLength":0.5}' "$(run 'S.sanitize({duration: 4})')"
 check "the duration ceiling is 60" '60' "$(run 'S.LIMITS.duration.max')"
 check "the duration floor is 5" '5' "$(run 'S.LIMITS.duration.min')"
 check "maxZoom clamps to the 1.30 cap" '1.3' "$(run 'S.sanitize({maxZoom: 9}).maxZoom')"
 check "maxZoom clamps up to the 1.05 floor" '1.05' "$(run 'S.sanitize({maxZoom: 1.0}).maxZoom')"
 
 # ------------------------------------------------------------------ direction
-check "an unknown direction falls back to in" 'in' "$(run 'S.sanitize({direction: "sideways"}).direction')"
-check "a removed direction is rejected" 'in' "$(run 'S.sanitize({direction: "horizontal"}).direction')"
-check "the human label is accepted" 'out' "$(run 'S.sanitize({direction: "Out"}).direction')"
-check "direction is case-insensitive" 'out' "$(run 'S.sanitize({direction: "OUT"}).direction')"
-check "there are exactly two directions" 'in,out' "$(run 'S.DIRECTIONS.join(",")')"
-check "the direction labels are In and Out" 'in=In,out=Out' "$(run 'S.directionOptions().map(function(o){return o.value+"="+o.label}).join(",")')"
+# Removed in 3.2: with a symmetric loop, "in" and "out" are the same oscillation
+# half a period apart, so the switch could only pick the starting pose.
+check "direction is gone from the schema" 'undefined' "$(run 'typeof S.sanitize({direction: "out"}).direction')"
+check "an old file's direction is dropped" 'false' "$(run 'Object.keys(S.sanitize({direction: "out"})).indexOf("direction") >= 0')"
 
 # -------------------------------------------------------------------- roguery
 # `enabled` defaults to TRUE, so "an unreadable value falls back to the default"
@@ -59,7 +57,7 @@ check "unreadable enabled keeps its default" 'true' "$(run 'S.sanitize({enabled:
 check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, duration: 20})')"
 check "garbage text parses to the defaults" "$DEFAULT" "$(run 'S.parse("not json at all")')"
 check "null parses to the defaults" "$DEFAULT" "$(run 'S.parse(null)')"
-check "an old v2 file keeps only what still exists" '{"enabled":true,"duration":42,"maxZoom":1.25,"direction":"out","drift":"center","driftLength":0.5}' \
+check "an old v2 file keeps only what still exists" '{"enabled":true,"duration":42,"maxZoom":1.25,"drift":"center","driftLength":0.5}' \
   "$(run 'S.sanitize({preset: "custom", enabled: true, duration: 42, maxZoom: 1.25, direction: "out", smoothEasing: true, handheld: true, breathing: true})')"
 
 # ------------------------------------------------------------------- drift
@@ -91,18 +89,18 @@ check "the length steps by five percent" '0.05' "$(run 'S.STEPS.driftLength')"
 check "a length drag snaps to its step" '0.35' "$(run 'S.snapToStep(0.3412, 0.05, 0)')"
 
 # --------------------------------------------------------------- serialising
-check "serialise round-trips canonically" '{"enabled":true,"duration":12,"maxZoom":1.25,"direction":"out","drift":"upLeft","driftLength":0.5}' \
-  "$(run 'JSON.parse(S.serialise({duration: 12, maxZoom: 1.25, direction: "out", drift: "upLeft"}))')"
+check "serialise round-trips canonically" '{"enabled":true,"duration":12,"maxZoom":1.25,"drift":"upLeft","driftLength":0.5}' \
+  "$(run 'JSON.parse(S.serialise({duration: 12, maxZoom: 1.25, drift: "upLeft"}))')"
 check "serialise never writes a removed key" 'false' \
-  "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
+  "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode","direction"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
 
 # The panel's unsaved-changes flag is `serialise(draft) != serialise(applied)`,
 # so equality has to be canonical or the warning lights up on an untouched panel.
 check "equal configs compare equal" 'true' "$(run 'S.serialise({duration: 20}) === S.serialise(S.DEFAULTS)')"
 check "a numeric string is not a change" 'true' "$(run 'S.serialise({duration: "20"}) === S.serialise({duration: 20})')"
-check "key order is not a change" 'true' "$(run 'S.serialise({direction: "out", duration: 30}) === S.serialise({duration: 30, direction: "out"})')"
+check "key order is not a change" 'true' "$(run 'S.serialise({drift: "up", duration: 30}) === S.serialise({duration: 30, drift: "up"})')"
 check "a real change is detected" 'false' "$(run 'S.serialise({duration: 21}) === S.serialise({duration: 20})')"
-check "flipping the direction is a change" 'false' "$(run 'S.serialise({direction: "out"}) === S.serialise({direction: "in"})')"
+check "flipping the drift is a change" 'false' "$(run 'S.serialise({drift: "left"}) === S.serialise({drift: "right"})')"
 
 # ------------------------------------------------------------------ snapping
 # PanelSlider's mouse path never applies `step` (it only honours `integer`), so

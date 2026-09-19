@@ -9,11 +9,14 @@ Omarchy 4 (Quattro) plugin, Quickshell + QML.
 
 The move is a **loop**: the zoom travels out to the far pose and back again over `duration`, along a
 single cosine. One cosine across the whole loop means zero velocity at both turnarounds and at the
-seam where the loop restarts, so the motion can neither stop nor jump. `direction` decides which pose
-the loop starts from — `in` grows from the whole image into the crop, `out` starts inside the crop and
-pulls back out of it. Both halves get exactly half of `duration`: an earlier version spent three
-quarters of the loop going out and a quarter coming back, and the three-times-quicker return read as a
-jump at the end of the move on a real desktop.
+seam where the loop restarts, so the motion can neither stop nor jump. Both halves get exactly half of
+`duration`: an earlier version spent three quarters of the loop going out and a quarter coming back,
+and the three-times-quicker return read as a jump at the end of the move on a real desktop.
+
+There is **no zoom-direction control**, and that is a decision rather than an omission: with a
+symmetric loop, "in" and "out" are the same oscillation half a period apart, so the switch could only
+ever choose the pose you happen to start on — invisible within seconds of a loop that never stops. It
+was built, lived with, and removed. The loop always runs 1 → `maxZoom` → 1.
 
 **The drift is the move's other axis**, and it is deliberately independent of the zoom: any zoom can
 creep any way. `drift` is one of the eight compass points or `center` (no drift at all), and
@@ -27,7 +30,6 @@ there is no drift at all, and a small `maxZoom` simply means a shorter journey.
 | `enabled` | `true` | — | freezes the clock; the wallpaper stays painted |
 | `duration` | `20.0` s | 5–60 | one whole loop, out and back |
 | `maxZoom` | `1.15` | 1.05–**1.30** | how far it zooms; the 1.30 cap is hard, above it the copy shows its pixels |
-| `direction` | `in` | in, out | which pose the loop starts from |
 | `drift` | `center` | center, left, right, up, down, and the four diagonals | which way the image creeps while the zoom opens |
 | `driftLength` | `0.5` | 0–**0.9** | how far it drifts, as a fraction of the margin; the 0.9 ceiling leaves ~14 px of slack so a hairline can never show |
 
@@ -110,7 +112,6 @@ The file is created with the defaults on first run, so there is nothing to set u
   "enabled": true,
   "duration": 20,
   "maxZoom": 1.15,
-  "direction": "in",
   "drift": "center",
   "driftLength": 0.5
 }
@@ -119,7 +120,7 @@ The file is created with the defaults on first run, so there is nothing to set u
 `Settings.js` is the only place defaults, limits and validation live, shared by `Service.qml` (which
 applies them) and `Menu.qml` (which edits them). Everything is clamped and whitelisted on read, so a
 hand-edited or corrupted file can never break the renderer: unknown keys are dropped (including keys
-from an older schema), `maxZoom` stops at 1.30, an unknown `direction` falls back to `in`, and
+from an older schema), `maxZoom` stops at 1.30, an unknown `drift` falls back to `center`, and
 unparseable text becomes the defaults.
 
 The same values are reachable from a terminal — which is also how persistence is tested:
@@ -127,7 +128,6 @@ The same values are reachable from a terminal — which is also how persistence 
 ```bash
 qs ipc call animated-wallpaper status                  # the live config as JSON
 qs ipc call animated-wallpaper setDuration 45
-qs ipc call animated-wallpaper setDirection out
 qs ipc call animated-wallpaper setDrift upLeft            # "up-left" and "Up Left" work too
 qs ipc call animated-wallpaper setDriftLength 0.8         # clamped to 0.9 on write
 qs ipc call animated-wallpaper setMaxZoom 9            # clamped to 1.30 on write
@@ -179,8 +179,7 @@ because it is a transport control rather than a motion setting), then two sectio
 
 | Section | Row | Control |
 |---|---|---|
-| ZOOM | Direction | `In` / `Out` segmented switch |
-| ZOOM | Level | slider, 1.05–1.30× |
+| ZOOM | — | slider, 1.05–1.30×. No row label: the section header names it and it is the only control there |
 | DURATION | Amount | slider, 5–60 seconds (one whole loop) |
 | DIRECTIONS | Drift | a 3×3 diana of nine chips: the eight compass points plus the centre dot |
 | DIRECTIONS | Length | slider, 0–90 % of the margin the zoom opens |
@@ -209,9 +208,9 @@ Rows for new controls go in the `Column` in `Menu.qml`; each one edits the draft
 ## Tests
 
 ```bash
-./tests/settings.test.sh    # 65 cases, seconds    -- the sanitiser, in node
-./tests/pose.test.sh        # 47 cases, ~2 min     -- the motion, from the plugin's own trace
-./tests/persist.test.sh     # 24 cases, ~70 s      -- write -> disk -> reload -> survives restart
+./tests/settings.test.sh    # 61 cases, seconds    -- the sanitiser, in node
+./tests/pose.test.sh        # 35 cases, ~1.5 min   -- the motion, from the plugin's own trace
+./tests/persist.test.sh     # 22 cases, ~70 s      -- write -> disk -> reload -> survives restart
 ```
 
 `pose.test.sh` asserts against a **pose trace** the service logs while a config loads
@@ -222,7 +221,7 @@ the loop period is `duration`, that the zoom reaches `maxZoom` and returns to 1.
 never jumps at the seam, that neither extreme is dwelt on, that **both halves run at the same pace**
 (the regression test for the 3/4–1/4 split), that the zoom follows one cosine across the loop (max
 deviation 0.00000 against an independent reimplementation), that the cosine's peak/mean slope is
-≈1.56 against 1.00 for a linear ramp, and that `out` really starts from the zoomed-in pose. The drift
+≈1.56 against 1.00 for a linear ramp, and that the loop always starts from the whole image. The drift
 scenarios add the identity that keeps the image safe — the offset is *exactly* `driftLength × (zoom −
 1) / 2`, so it can never exceed the margin it rides on — plus that it points the way it was told
 (sign-agnostically: the first version of that check only worked for a negative vector and failed a
@@ -236,6 +235,10 @@ honest fix; silently skipping would hide real regressions.
 
 `persist.test.sh` drives the real write path over IPC — the same `set()`/`save()` pair the menu
 calls — then restarts the shell and re-reads the config.
+
+**Both suites save the settings file when they start and put it back when they finish**, because they
+write the same file the panel writes: wiping a human's settings is not a test's business. (An `Apply`
+from the panel *during* a run is the one thing they cannot preserve — they restore what they found.)
 
 ## Disable / remove
 
@@ -295,3 +298,4 @@ Two more traps this plugin walked into, both worth knowing before adding a widge
 | 2.0 | motion dynamics: presets, a binary In/Out direction, handheld shake, a breathing loop, and `pauseAtEnd` removed. All four extras were then dropped as redundant — see below |
 | **3.0** | **the small version: four values, one cosine, nothing else.** `preset` (a shortcut through the other values, not an effect of its own), `handheld` (a ~50 px wobble on a 40 s traverse read as the wallpaper vibrating rather than as a hand), `breathing` (its "off" state is a hard snap back, its "on" state left the direction switch looking inert) and `smoothEasing` (ease-in-out is simply the better default) are all gone. The loop became symmetric because the 3/4–1/4 split's quicker return read as a jump at the end; the pan layer went with the shake |
 | **3.1** | **the drift comes back as an axis of its own** — independent of the zoom, so any zoom can creep any way: a 3×3 diana of nine directions (the four straight, the four diagonals, the centre) plus a `driftLength` slider. Straight-only was built first and rejected for leaving out the diagonals; an angle in degrees and a pair of X/Y ranges were rejected too, because both spend a slider on something one click can say, and degrees needs a second slider for magnitude anyway |
+| **3.2** | **`direction` is gone**, because with a symmetric loop "in" and "out" are the same oscillation half a period apart — it could only pick the starting pose. The ZOOM section lost its row label too: the header names it and the slider is the only control there. The test suites now save and restore the settings file instead of leaving their own defaults behind |
