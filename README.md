@@ -120,6 +120,14 @@ Add `--pid "$(qs list --all | awk '/Process ID/{print $3; exit}')"` if `qs` cann
 The IPC path applies immediately and skips the panel's Apply step — it is the scripting interface,
 not the UI.
 
+**Why the write goes through a `Process` and not `FileView.setText`:** measured, `FileView` stops
+persisting writes once the file has been modified externally — an `Apply` right after any external
+edit never lands, whatever the delay (tested up to 4 s), the file keeps the stale content, and
+nothing is logged because `printErrors` is off. That is a silent "Apply did nothing". A one-shot
+writer (temp file + rename, JSON passed as an argv entry) is boring and always works: 8/8 writes
+after external edits and 5/5 back-to-back Applies, against 1/8 and 0/5 for the `FileView` route. Do
+not "simplify" it back.
+
 ## Tune
 
 Everything user-facing is in the menu (below) or `settings.json`. The remaining constants are the

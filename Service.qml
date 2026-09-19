@@ -65,11 +65,31 @@ Item {
     root.startTrace()
   }
 
-  // The one place the settings file is written. The menu edits the values and calls
-  // save() when a control is done being dragged; the IPC handler below calls it
-  // too, which is what makes persistence testable without a mouse.
+  // Writing goes through a Process, not through FileView.setText.
+  //
+  // Measured behaviour of the FileView route: once the file has been modified
+  // externally, the view stops persisting writes entirely -- an Apply right after
+  // any external edit never lands, whatever the delay (tested up to 4 s), the
+  // on-disk file keeps the stale content, and nothing is logged because
+  // printErrors is off. That is the "I pressed Apply and it did nothing" failure,
+  // and it is silent. A one-shot writer is boring and always works.
+  //
+  // The JSON travels as an argv entry (Quickshell passes `command` as a real
+  // argv, so quotes and braces are safe), and the write is atomic: temp file in
+  // the same directory, then rename over the target.
+  Process {
+    id: settingsWriter
+    command: ["sh", "-c",
+      'umask 077; tmp="$1.tmp.$$"; trap \'rm -f "$tmp"\' EXIT; printf \'%s\\n\' "$2" > "$tmp" && mv -f "$tmp" "$1"',
+      "sh", root.settingsPath, Settings.serialise(root.config)]
+    onExited: function(code) {
+      if (code !== 0) console.warn("[animated-wallpaper] settings write failed, exit " + code)
+    }
+  }
+
   function save() {
-    settingsWriter.setText(Settings.serialise(root.config) + "\n")
+    settingsWriter.running = false      // a newer save supersedes one in flight
+    settingsWriter.running = true
   }
 
   function set(key, value) {
@@ -77,14 +97,6 @@ Item {
     for (var k in root.config) next[k] = root.config[k]
     next[key] = value
     root.config = Settings.sanitize(next)
-  }
-
-  FileView {
-    id: settingsWriter
-    path: root.settingsPath
-    watchChanges: false
-    atomicWrites: true
-    printErrors: false
   }
 
   // Scriptable surface. Handy from a terminal, and it is how the persistence
