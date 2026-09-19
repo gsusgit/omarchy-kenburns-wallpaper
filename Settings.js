@@ -3,40 +3,44 @@
 // Single source of truth for the plugin's user-facing parameters. Shared by
 // Service.qml (which applies them) and Menu.qml (which edits them), so it lives
 // in its own module instead of being duplicated in both files.
+//
+// v3.0 schema, and deliberately small. Removed after living with them:
+// `preset` (a shortcut through four values, not an effect of its own),
+// `handheld` (a ~50 px wobble on top of a 40 s traverse read as the wallpaper
+// vibrating, not as a hand), `breathing` (with a continuous loop its "off" state
+// is a hard snap back, and its "on" state left the direction switch looking
+// inert) and `smoothEasing` (ease-in-out is simply the better default; the toggle
+// only offered a worse one).
+//
+// Four values remain, and each one changes something you can see: whether it
+// moves, how long the loop takes, how far it zooms, and which way.
 
-var MODES = ["zoomIn", "zoomOut", "horizontal", "vertical", "random"]
+var DIRECTIONS = ["in", "out"]
+
+var DIRECTION_LABELS = { in: "In", out: "Out" }
+
+function directionOptions() {
+  var out = []
+  for (var i = 0; i < DIRECTIONS.length; i++)
+    out.push({ value: DIRECTIONS[i], label: DIRECTION_LABELS[DIRECTIONS[i]] })
+  return out
+}
 
 var DEFAULTS = {
   enabled: true,
   duration: 20.0,
   maxZoom: 1.15,
-  mode: "random",
-  smoothEasing: true,
-  pauseAtEnd: 2.0
+  direction: "in"
 }
 
 var LIMITS = {
-  duration: { min: 5, max: 120 },
-  maxZoom: { min: 1.05, max: 1.30 },   // 1.30 is the cap: above it the copy shows its pixels
-  pauseAtEnd: { min: 0, max: 10 }
+  duration: { min: 5, max: 60 },
+  maxZoom: { min: 1.05, max: 1.30 }    // 1.30 is the cap: above it the copy shows its pixels
 }
 
-var LABELS = {
-  zoomIn: "Zoom In",
-  zoomOut: "Zoom Out",
-  horizontal: "Horizontal",
-  vertical: "Vertical",
-  random: "Random"
-}
-
-// Ordered {value,label} pairs for the mode dropdown: the human labels the menu
-// shows, mapped to the values the engine switches on. Derived from MODES and
-// LABELS so a new mode cannot end up half-wired.
-function modeOptions() {
-  var out = []
-  for (var i = 0; i < MODES.length; i++) out.push({ value: MODES[i], label: LABELS[MODES[i]] })
-  return out
-}
+// One step per slider. PanelSlider does not apply `step` itself, so the panel
+// reads these and snaps (see snapToStep).
+var STEPS = { duration: 1, maxZoom: 0.01 }
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)) }
 
@@ -77,29 +81,26 @@ function bool(value, fallback) {
   return fallback
 }
 
-function normaliseMode(value) {
+function normaliseDirection(value) {
   var raw = String(value === undefined || value === null ? "" : value).trim().toLowerCase()
-  if (!raw) return DEFAULTS.mode
-  var squashed = raw.replace(/[ _-]/g, "")
-  for (var i = 0; i < MODES.length; i++) {
-    if (MODES[i].toLowerCase() === raw) return MODES[i]
-    if (LABELS[MODES[i]].toLowerCase().replace(/[ _-]/g, "") === squashed) return MODES[i]
+  for (var i = 0; i < DIRECTIONS.length; i++) {
+    if (DIRECTIONS[i] === raw) return DIRECTIONS[i]
+    if (DIRECTION_LABELS[DIRECTIONS[i]].toLowerCase() === raw) return DIRECTIONS[i]
   }
-  return DEFAULTS.mode
+  return DEFAULTS.direction
 }
 
 // Whitelist + clamp. Anything unreadable, out of range or unknown becomes the
-// default, so a hand-edited file can never break the renderer and the file
-// always round-trips to a canonical shape.
+// default, so a hand-edited file can never break the renderer, a previous
+// schema's keys are dropped rather than resurrected, and the file always
+// round-trips to a canonical shape.
 function sanitize(raw) {
   var input = (raw && typeof raw === "object") ? raw : {}
   return {
     enabled: bool(input.enabled, DEFAULTS.enabled),
     duration: number(input.duration, LIMITS.duration.min, LIMITS.duration.max, DEFAULTS.duration),
     maxZoom: number(input.maxZoom, LIMITS.maxZoom.min, LIMITS.maxZoom.max, DEFAULTS.maxZoom),
-    mode: normaliseMode(input.mode),
-    smoothEasing: bool(input.smoothEasing, DEFAULTS.smoothEasing),
-    pauseAtEnd: number(input.pauseAtEnd, LIMITS.pauseAtEnd.min, LIMITS.pauseAtEnd.max, DEFAULTS.pauseAtEnd)
+    direction: normaliseDirection(input.direction)
   }
 }
 
@@ -111,15 +112,4 @@ function parse(text) {
 
 function serialise(config) {
   return JSON.stringify(sanitize(config), null, 2) + "\n"
-}
-
-// One variant per pair. Deliberately a hash of the pair index rather than
-// Math.random(): a reload or a shell restart lands on the same pose instead of
-// teleporting the image. Contract: deterministic, always one of the four, and
-// covering all four as the pair index advances.
-function variantForPair(pairIndex, mode) {
-  if (mode !== "random") return MODES.indexOf(mode) >= 0 ? mode : "zoomIn"
-  var x = (pairIndex + 1) * 2654435761
-  x = (x ^ (x >> 13)) % 4
-  return ["zoomIn", "zoomOut", "horizontal", "vertical"][Math.abs(x) % 4]
 }

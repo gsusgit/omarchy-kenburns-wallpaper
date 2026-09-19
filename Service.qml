@@ -15,9 +15,11 @@ import "Settings.js" as Settings
 // same crop, same scale, so a disabled plugin or a failed image load looks
 // like nothing happened instead of looking broken.
 //
-// The move is a Ken Burns segment: a cycle is one traverse (`duration`) plus a
-// dwell (`pauseAtEnd`), and a pair is two cycles, out and back, so a pair always
-// ends on the pose it started from and a fixed mode can never jump.
+// The move is a Ken Burns loop, and the zoom is the whole of it: one loop takes
+// the zoom out to the far pose and brings it back along a single cosine, so the
+// motion never stops and never jumps. `direction` decides which pose the loop
+// starts from: In grows from the whole image into the crop, Out starts inside the
+// crop and pulls back out of it.
 //
 // Every animated value is a pure function of one accumulating clock, so the
 // repaint rate is ours (frameMs) instead of the compositor's, and there is
@@ -37,8 +39,6 @@ Item {
   readonly property real exposureDepth: 0.025
   readonly property int exposurePeriodMs: 22000
   readonly property int revealMs: 420
-  readonly property real panSplit: 0.5         // pan extent as a fraction of the zoom slack
-  readonly property real blendSec: 2.0         // pose cross-fade when a random pair changes variant
   readonly property int traceMs: 150           // pose trace interval (tests read it)
   readonly property int traceWindowMs: 60000   // trace is bounded: no line-per-second forever
 
@@ -123,9 +123,7 @@ Item {
     function setEnabled(value: string): void { root.applyIpc("enabled", value) }
     function setDuration(value: string): void { root.applyIpc("duration", value) }
     function setMaxZoom(value: string): void { root.applyIpc("maxZoom", value) }
-    function setMode(value: string): void { root.applyIpc("mode", value) }
-    function setSmoothEasing(value: string): void { root.applyIpc("smoothEasing", value) }
-    function setPauseAtEnd(value: string): void { root.applyIpc("pauseAtEnd", value) }
+    function setDirection(value: string): void { root.applyIpc("direction", value) }
 
     function reset(): void {
       root.config = Settings.sanitize({})
@@ -185,14 +183,9 @@ Item {
     repeat: true
     onTriggered: console.log("[animated-wallpaper] pose " + JSON.stringify({
       t: Math.round(root.clock),
-      cy: root.cycleIndex,
-      pair: root.pairIndex,
-      var: root.variant,
+      cy: root.loopIndex,
       seg: Number(root.segment.toFixed(4)),
-      e: Number(root.eased.toFixed(4)),
-      z: Number(root.zoom.toFixed(6)),
-      x: Number(root.panX.toFixed(6)),
-      y: Number(root.panY.toFixed(6))
+      z: Number(root.zoom.toFixed(6))
     }))
   }
 
@@ -201,53 +194,34 @@ Item {
   readonly property string currentLink: stateDir + "/background"
 
   // ------------------------------------------------------------- Ken Burns pose
-  readonly property real cycleSec: Math.max(1, config.duration + config.pauseAtEnd)
-  readonly property real cycleMs: cycleSec * 1000
-  readonly property real pairMs: cycleMs * 2
-  readonly property int cycleIndex: Math.floor(clock / cycleMs)
-  readonly property int pairIndex: Math.floor(clock / pairMs)
-  readonly property bool forwardCycle: (cycleIndex % 2) === 0
-  readonly property real inCycleSec: (clock % cycleMs) / 1000
-  readonly property real inPairSec: (clock % pairMs) / 1000
-  readonly property real segment: Math.max(0, Math.min(1, inCycleSec / Math.max(0.5, config.duration)))
-  readonly property real eased: config.smoothEasing
-    ? 0.5 - 0.5 * Math.cos(Math.PI * segment)
-    : segment
+  // One loop is one smooth oscillation: the zoom travels out to the far pose and
+  // back again over `duration`, along a single cosine. One cosine across the whole
+  // loop is C-infinity continuous -- zero velocity at both turnarounds and at the
+  // seam where the loop restarts -- so the pose can neither stop nor jump.
+  //
+  // Both halves get exactly half of `duration`. An earlier version spent three
+  // quarters of the loop going out and a quarter coming back, which made the
+  // return three times quicker than the outbound leg and read as a jump at the end
+  // of the move (reported from the desktop). Equal halves are the fix.
+  readonly property real cycleMs: Math.max(1000, config.duration * 1000)
+  readonly property int loopIndex: Math.floor(clock / cycleMs)
+  readonly property real segment: Math.max(0, Math.min(1, (clock % cycleMs) / cycleMs))
 
-  readonly property string variant: Settings.variantForPair(pairIndex, config.mode)
-  readonly property string previousVariant: Settings.variantForPair(Math.max(0, pairIndex - 1), config.mode)
-  // Cross-fade the pose when a random pair changes variant, so the switch is
-  // never a jump. Zero whenever the variant is unchanged (every fixed mode).
-  readonly property real blend: variant !== previousVariant
-    ? Math.max(0, 1 - inPairSec / blendSec)
-    : 0
-
-  function mix(a, b, t) { return a + (b - a) * t }
-  function startZoom(v) { return v === "zoomOut" || v === "horizontal" || v === "vertical" ? config.maxZoom : 1 }
-  function endZoom(v) { return v === "zoomOut" ? 1 : config.maxZoom }
-  function startX(v) { return v === "horizontal" ? -panSplit : 0 }
-  function endX(v) { return v === "horizontal" ? panSplit : 0 }
-  function startY(v) { return v === "vertical" ? -panSplit : 0 }
-  function endY(v) { return v === "vertical" ? panSplit : 0 }
-
-  function variantZoom(v) { return mix(startZoom(v), endZoom(v), forwardCycle ? eased : 1 - eased) }
-  function variantX(v) { return mix(startX(v), endX(v), forwardCycle ? eased : 1 - eased) }
-  function variantY(v) { return mix(startY(v), endY(v), forwardCycle ? eased : 1 - eased) }
-
-  // `blend` weighs how much of the *previous* pair's start pose is still in
-  // play, so it is the second argument: at 0 the running pose wins, at 1 the
-  // hand-off pose does. Getting this order wrong freezes the pose at the start
-  // of every cycle (the fixed modes never blend), which is exactly how it broke
-  // the first time -- the pose trace caught it, not the eye.
-  readonly property real zoom: mix(variantZoom(variant), startZoom(previousVariant), blend)
-  readonly property real panX: mix(variantX(variant), startX(previousVariant), blend)
-  readonly property real panY: mix(variantY(variant), startY(previousVariant), blend)
-
-  function wave(periodMs) {
+  // 0 -> 1 -> 0 across one period, cosine-eased at both ends. The exposure breath
+  // is the same curve at a much slower period, so both share this one function.
+  function cosineWave(periodMs) {
     return 0.5 - 0.5 * Math.cos(2 * Math.PI * (root.clock % periodMs) / periodMs)
   }
 
-  readonly property real exposure: exposureDepth * root.wave(exposurePeriodMs)
+  readonly property real progress: root.cosineWave(cycleMs)
+
+  function mix(a, b, t) { return a + (b - a) * t }
+
+  readonly property real startZoom: config.direction === "out" ? config.maxZoom : 1
+  readonly property real endZoom: config.direction === "out" ? 1 : config.maxZoom
+  readonly property real zoom: mix(startZoom, endZoom, progress)
+
+  readonly property real exposure: exposureDepth * root.cosineWave(exposurePeriodMs)
 
   property real clock: 0
   property real lastTickMs: 0
@@ -366,7 +340,7 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    console.log("[animated-wallpaper] ready v0.8: screens=" + Quickshell.screens.length
+    console.log("[animated-wallpaper] ready v3.0: screens=" + Quickshell.screens.length
       + " config=" + JSON.stringify(root.config))
   }
 
@@ -395,93 +369,84 @@ Item {
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
 
       // ------------------------------------------------------- wallpaper
-      // Pan first, zoom second: two nested items instead of a transform list,
-      // so the pan stays linear while the zoom scales around the centre. The
-      // surface clips whatever leaves the screen, which is what makes a zoom
-      // read as a zoom. Pan is a fraction of the slack the zoom creates, so the
-      // image always covers the screen and no black edge can ever show up.
+      // One scaled layer: the surface clips whatever leaves the screen, which is
+      // what makes a zoom read as a zoom. Scaling is anchored at the centre, so
+      // the visible crop stays on the middle of the image.
       Item {
-        id: panLayer
-        x: root.panX * (root.zoom - 1) / 2 * win.width
-        y: root.panY * (root.zoom - 1) / 2 * win.height
+        id: zoomLayer
         width: win.width
         height: win.height
+        scale: root.zoom
+        transformOrigin: Item.Center
+
+        Image {
+          id: baseImage
+          anchors.fill: parent
+          source: root.imageUrl(root.displayPath)
+          fillMode: Image.PreserveAspectCrop
+          asynchronous: true
+          cache: true
+          smooth: true
+          mipmap: true
+          // Never paint an empty frame: while our copy is not ready,
+          // Omarchy's own wallpaper underneath shows through.
+          opacity: status === Image.Ready ? 1 : 0
+        }
 
         Item {
-          id: zoomLayer
+          id: incomingLayer
           anchors.fill: parent
-          scale: root.zoom
-          transformOrigin: Item.Center
+          visible: root.incomingPath !== "" && root.revealProgress < 1
+                   && incomingImage.status === Image.Ready
+          layer.enabled: visible
+          layer.smooth: true
+          layer.effect: MultiEffect {
+            maskEnabled: true
+            maskSource: revealMask
+            maskThresholdMin: 0.5
+            maskSpreadAtMin: 0.02
+          }
 
           Image {
-            id: baseImage
+            id: incomingImage
             anchors.fill: parent
-            source: root.imageUrl(root.displayPath)
+            source: root.imageUrl(root.incomingPath)
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
-            cache: true
+            cache: false
             smooth: true
             mipmap: true
-            // Never paint an empty frame: while our copy is not ready,
-            // Omarchy's own wallpaper underneath shows through.
-            opacity: status === Image.Ready ? 1 : 0
+            onStatusChanged: if (status === Image.Ready) root.startReveal()
           }
+        }
 
-          Item {
-            id: incomingLayer
+        // The same slanted reveal Omarchy's stock background uses (slant
+        // -0.18), so a theme switch still arrives looking the way it always
+        // did -- it just also breathes now.
+        Item {
+          id: revealMask
+          anchors.fill: parent
+          visible: false
+          layer.enabled: true
+
+          readonly property real slant: -0.18
+          readonly property real centerTop: width / 2 - slant * height / 2
+          readonly property real centerBottom: width / 2 + slant * height / 2
+          readonly property real reach: width / 2 + Math.abs(slant) * height / 2 + 4
+          readonly property real spread: reach * root.revealProgress
+
+          Shape {
             anchors.fill: parent
-            visible: root.incomingPath !== "" && root.revealProgress < 1
-                     && incomingImage.status === Image.Ready
-            layer.enabled: visible
-            layer.smooth: true
-            layer.effect: MultiEffect {
-              maskEnabled: true
-              maskSource: revealMask
-              maskThresholdMin: 0.5
-              maskSpreadAtMin: 0.02
-            }
-
-            Image {
-              id: incomingImage
-              anchors.fill: parent
-              source: root.imageUrl(root.incomingPath)
-              fillMode: Image.PreserveAspectCrop
-              asynchronous: true
-              cache: false
-              smooth: true
-              mipmap: true
-              onStatusChanged: if (status === Image.Ready) root.startReveal()
-            }
-          }
-
-          // The same slanted reveal Omarchy's stock background uses (slant
-          // -0.18), so a theme switch still arrives looking the way it always
-          // did -- it just also breathes now.
-          Item {
-            id: revealMask
-            anchors.fill: parent
-            visible: false
-            layer.enabled: true
-
-            readonly property real slant: -0.18
-            readonly property real centerTop: width / 2 - slant * height / 2
-            readonly property real centerBottom: width / 2 + slant * height / 2
-            readonly property real reach: width / 2 + Math.abs(slant) * height / 2 + 4
-            readonly property real spread: reach * root.revealProgress
-
-            Shape {
-              anchors.fill: parent
-              antialiasing: true
-              preferredRendererType: Shape.CurveRenderer
-              ShapePath {
-                fillColor: "white"
-                strokeColor: "transparent"
-                startX: revealMask.centerTop - revealMask.spread; startY: 0
-                PathLine { x: revealMask.centerTop + revealMask.spread; y: 0 }
-                PathLine { x: revealMask.centerBottom + revealMask.spread; y: revealMask.height }
-                PathLine { x: revealMask.centerBottom - revealMask.spread; y: revealMask.height }
-                PathLine { x: revealMask.centerTop - revealMask.spread; y: 0 }
-              }
+            antialiasing: true
+            preferredRendererType: Shape.CurveRenderer
+            ShapePath {
+              fillColor: "white"
+              strokeColor: "transparent"
+              startX: revealMask.centerTop - revealMask.spread; startY: 0
+              PathLine { x: revealMask.centerTop + revealMask.spread; y: 0 }
+              PathLine { x: revealMask.centerBottom + revealMask.spread; y: revealMask.height }
+              PathLine { x: revealMask.centerBottom - revealMask.spread; y: revealMask.height }
+              PathLine { x: revealMask.centerTop - revealMask.spread; y: 0 }
             }
           }
         }

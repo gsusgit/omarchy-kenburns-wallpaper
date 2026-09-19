@@ -1,6 +1,6 @@
 #!/bin/bash
-# End-to-end persistence tests: IPC write -> settings.json on disk -> the
-# service's own FileView reload -> the engine's config.
+# End-to-end persistence tests (v3.0 schema): IPC write -> the settings file on
+# disk -> the service's own FileView reload -> the engine's config.
 #
 # This is the only honest way to test persistence without a mouse: the IPC
 # handler and the menu call the exact same service.save()/set() pair, so a round
@@ -11,9 +11,8 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-PLUGIN_DIR="$PWD"
 SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"mode":"random","smoothEasing":true,"pauseAtEnd":2}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"direction":"in"}'
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -45,7 +44,7 @@ fi
 echo "  shell pid $SHELL_PID"
 
 # Wait for the file to come back through the service's own watcher.
-wait_for_disk() { # wait_for_disk <jq-ish python expr> <seconds>
+wait_for_disk() { # wait_for_disk <python expr> <seconds>
   local expr="$1" limit="$2" i=0
   while (( i < limit * 2 )); do
     if python3 -c "import json,sys;d=json.load(open('$SETTINGS'));sys.exit(0 if ($expr) else 1)" 2>/dev/null; then return 0; fi
@@ -54,42 +53,64 @@ wait_for_disk() { # wait_for_disk <jq-ish python expr> <seconds>
   return 1
 }
 
+disk() { python3 -c "import json;print(json.load(open('$SETTINGS'))['$1'])"; }
+live() { python3 -c "import json,sys;print(json.load(sys.stdin)['$1'])"; }
+
 restore
 sleep 2
 check "status starts at the defaults" "$DEFAULT" "$(ipc status)"
 
+echo "-- the file holds exactly the four values"
+check "the key set is closed" 'direction,duration,enabled,maxZoom' \
+  "$(python3 -c "import json;print(','.join(sorted(json.load(open('$SETTINGS')).keys())))")"
+check "pauseAtEnd is not in the file" "keyerror" "$(disk pauseAtEnd 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+check "mode is not in the file" "keyerror" "$(disk mode 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+check "preset is not in the file" "keyerror" "$(disk preset 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+check "handheld is not in the file" "keyerror" "$(disk handheld 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+check "breathing is not in the file" "keyerror" "$(disk breathing 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+check "smoothEasing is not in the file" "keyerror" "$(disk smoothEasing 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+
 echo "-- writing each key through IPC"
-ipc setDuration 45   >/dev/null
-wait_for_disk "d['duration'] == 45" 6 && check "duration reached settings.json" "45" "$(python3 -c "import json;print(json.load(open('$SETTINGS'))['duration'])")" \
-  || check "duration reached settings.json" "45" "timeout"
+ipc setDuration 45 >/dev/null
+wait_for_disk "d['duration'] == 45" 6 && check "duration reached the settings file" "45" "$(disk duration)" \
+  || check "duration reached the settings file" "45" "timeout"
 sleep 2
-check "and the engine applied it" "45" "$(ipc status | python3 -c 'import json,sys;print(json.load(sys.stdin)["duration"])')"
+check "and the engine applied it" "45" "$(ipc status | live duration)"
 
-ipc setMaxZoom 9     >/dev/null   # way above the 1.30 cap
-wait_for_disk "d['maxZoom'] == 1.3" 6 && check "maxZoom is clamped to the 1.30 cap on write" "1.3" "$(python3 -c "import json;print(json.load(open('$SETTINGS'))['maxZoom'])")" \
-  || check "maxZoom is clamped to the 1.30 cap on write" "1.3" "timeout"
+ipc setDuration 500 >/dev/null          # far above the 60 s ceiling
+wait_for_disk "d['duration'] == 60" 6 && check "duration is clamped to the 60 s ceiling" "60" "$(disk duration)" \
+  || check "duration is clamped to the 60 s ceiling" "60" "timeout"
 
-ipc setMode nonsense  >/dev/null
-wait_for_disk "d['mode'] == 'random'" 6 && check "an unknown mode falls back to random" "random" "$(python3 -c "import json;print(json.load(open('$SETTINGS'))['mode'])")" \
-  || check "an unknown mode falls back to random" "random" "timeout"
+ipc setDuration 1 >/dev/null            # far below the 5 s floor
+wait_for_disk "d['duration'] == 5" 6 && check "duration is clamped up to the 5 s floor" "5" "$(disk duration)" \
+  || check "duration is clamped up to the 5 s floor" "5" "timeout"
 
-ipc setMode horizontal >/dev/null
-wait_for_disk "d['mode'] == 'horizontal'" 6 && check "a valid mode is stored" "horizontal" "$(python3 -c "import json;print(json.load(open('$SETTINGS'))['mode'])")" \
-  || check "a valid mode is stored" "horizontal" "timeout"
+ipc setMaxZoom 9 >/dev/null             # far above the 1.30 cap
+wait_for_disk "d['maxZoom'] == 1.3" 6 && check "maxZoom is clamped to the 1.30 cap" "1.3" "$(disk maxZoom)" \
+  || check "maxZoom is clamped to the 1.30 cap" "1.3" "timeout"
 
-ipc setSmoothEasing false >/dev/null
-wait_for_disk "d['smoothEasing'] is False" 6 && check "the easing toggle persists as a boolean" "False" "$(python3 -c "import json;print(json.load(open('$SETTINGS'))['smoothEasing'])")" \
-  || check "the easing toggle persists as a boolean" "False" "timeout"
+ipc setDirection side >/dev/null
+wait_for_disk "d['direction'] == 'in'" 6 && check "an unknown direction falls back to in" "in" "$(disk direction)" \
+  || check "an unknown direction falls back to in" "in" "timeout"
+
+ipc setDirection out >/dev/null
+wait_for_disk "d['direction'] == 'out'" 6 && check "the direction switch persists" "out" "$(disk direction)" \
+  || check "the direction switch persists" "out" "timeout"
+
+ipc setDuration 42 >/dev/null
+ipc setMaxZoom 1.25 >/dev/null
+wait_for_disk "d['maxZoom'] == 1.25" 6
 
 echo "-- surviving a restart (the acceptance criterion)"
-ipc setDuration 33 >/dev/null
-wait_for_disk "d['duration'] == 33" 6 || echo "  (warning: write did not land before the restart)"
+sleep 2
+check "the values are in place before the restart" "42|1.25|out" \
+  "$(disk duration)|$(disk maxZoom)|$(disk direction)"
 omarchy-restart-shell >/dev/null 2>&1
 sleep 10
 SHELL_PID=$(qs list --all | awk '/Process ID/{print $3; exit}')
 check "the shell came back" "true" "$([[ -n $SHELL_PID ]] && echo true || echo false)"
-check "the settings survived the restart" "33" "$(ipc status | python3 -c 'import json,sys;print(json.load(sys.stdin)["duration"])')"
-check "and so did the other keys" "horizontal" "$(ipc status | python3 -c 'import json,sys;print(json.load(sys.stdin)["mode"])')"
+check "and the values survived the restart" "42|1.25|out" \
+  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live direction)"
 
 echo "-- reset"
 ipc reset >/dev/null

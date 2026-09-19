@@ -6,11 +6,23 @@ import "Settings.js" as Settings
 
 // The settings panel behind the bar button.
 //
-// The panel edits a LOCAL DRAFT: nothing reaches the service (and therefore
-// nothing animates differently, and nothing is written to disk) until Apply is
-// pressed. That is what makes "unsaved changes" a real, visible state instead of
-// a hope -- and it means a slider drag can never leave a half-chosen value
-// behind. The service remains the only writer of settings.json.
+// The panel edits a LOCAL DRAFT: nothing reaches the service (so nothing
+// animates differently, and nothing is written to disk) until Apply is pressed.
+// That is what makes "unsaved changes" a real, visible state instead of a hope,
+// and it means a slider drag can never leave a half-chosen value behind.
+//
+// Deliberately small. Four values, two of them sliders, and every control
+// changes something you can see. Removed after living with them: the preset
+// dropdown (a shortcut through these values, not an effect of its own), the
+// handheld shake and the breathing loop (both read as the wallpaper misbehaving
+// rather than as camera work) and the smooth-motion toggle (ease-in-out is
+// simply the better default, and the toggle only offered a worse one).
+//
+// Animate ("enabled") lives in the header with the reset action: it is a
+// transport control, not a motion setting.
+//
+// Both callers that change the settings (this panel and the service's IPC
+// surface) go through the service: it owns the file.
 Panel {
   id: root
   moduleName: "gsus.animated-wallpaper"
@@ -20,7 +32,6 @@ Panel {
   property var hostWidget: null
 
   readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
-  readonly property color dim: Qt.darker(root.barForeground, 1.55)
   readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
 
   // ------------------------------------------------------------------- draft
@@ -74,7 +85,7 @@ Panel {
 
   // The draft starts from whatever is applied, and follows the service only
   // while there is nothing unsaved to lose -- so an external change (IPC, a hand
-  // edit of settings.json) shows up in the panel, and unsaved edits survive
+  // edit of the settings file) shows up in the panel, and unsaved edits survive
   // closing and reopening the panel instead of being silently thrown away.
   function syncFromService() {
     if (root.dirty) return
@@ -110,18 +121,52 @@ Panel {
         width: parent.width
         spacing: Style.space(8)
 
-        Text {
+        // ------------------------------------------------------------ header
+        // The switch and the reset sit next to the title: Animate turns the
+        // effect on and off, so it is not one more row among the motion values.
+        Row {
           width: parent.width
-          text: "Animated wallpaper"
-          color: root.barForeground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.subtitle
-          font.bold: true
-          wrapMode: Text.WordWrap
+          spacing: Style.space(8)
+
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - resetBtn.width - animateSwitch.width - parent.spacing * 2
+            text: "Animated wallpaper"
+            color: root.barForeground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.subtitle
+            font.bold: true
+            elide: Text.ElideRight
+          }
+
+          // Loads the defaults into the panel only. Apply is still required, so
+          // this is undoable by reopening the panel.
+          PanelActionButton {
+            id: resetBtn
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "\uf021"                       // Font Awesome refresh
+            tooltipText: "Reset to defaults"
+            foreground: root.barForeground
+            onClicked: root.editAll(Settings.sanitize({}))
+          }
+
+          ToggleSwitch {
+            id: animateSwitch
+            anchors.verticalCenter: parent.verticalCenter
+            checked: root.draft.enabled === true
+            foreground: root.barForeground
+            onToggled: root.edit("enabled", !root.draft.enabled)
+
+            PanelToolTip {
+              visible: animateSwitch.containsMouse
+              text: root.draft.enabled ? "ON" : "OFF"
+              fontFamily: root.fontFamily
+            }
+          }
         }
 
-        // The only thing above the controls, and only when it has something to
-        // say. It is the panel's whole "you have not applied this yet" signal.
+        // The panel's whole "you have not applied this yet" signal, alongside
+        // the Apply button lighting up.
         Text {
           width: parent.width
           visible: root.dirty
@@ -132,62 +177,37 @@ Panel {
           font.bold: true
         }
 
-        Rectangle {
+        PanelSeparator { foreground: root.barForeground }
+
+        // ------------------------------------------------------------- zoom
+        PanelSectionHeader {
           width: parent.width
-          height: 1
-          color: root.dim
-          opacity: 0.35
+          text: "ZOOM"
+          foreground: root.barForeground
+          fontFamily: root.fontFamily
         }
 
-        // ------------------------------------------------------- enable
-        Row {
-          width: parent.width
-          spacing: Style.space(10)
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - enableSwitch.width - parent.spacing
-            text: "Animate"
-            color: root.barForeground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          ToggleSwitch {
-            id: enableSwitch
-            anchors.verticalCenter: parent.verticalCenter
-            checked: root.draft.enabled === true
-            foreground: root.barForeground
-            onToggled: root.edit("enabled", !root.draft.enabled)
-          }
-        }
-
-        // ------------------------------------------------------- duration
         Text {
           width: parent.width
-          text: "Duration  " + Math.round(root.draft.duration) + " s"
+          text: "Direction"
           color: root.barForeground
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
         }
 
-        PanelSlider {
-          width: parent.width
-          bar: root.bar
-          minimum: Settings.LIMITS.duration.min
-          maximum: Settings.LIMITS.duration.max
-          step: 1
-          integer: true
-          value: root.draft.duration
-          onMoved: function(v) {
-            root.edit("duration", Settings.snapToStep(v, 1, Settings.LIMITS.duration.min))
-          }
+        ButtonGroup {
+          options: Settings.directionOptions()
+          value: root.draft.direction
+          foreground: root.barForeground
+          accent: Color.accent
+          background: "transparent"
+          fontFamily: root.fontFamily
+          onChanged: function(v) { root.edit("direction", v) }
         }
 
-        // ------------------------------------------------------- maxZoom
         Text {
           width: parent.width
-          text: "Zoom level  " + root.draft.maxZoom.toFixed(2) + "x"
+          text: "Level  " + root.draft.maxZoom.toFixed(2) + "x"
           color: root.barForeground
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
@@ -198,17 +218,30 @@ Panel {
           bar: root.bar
           minimum: Settings.LIMITS.maxZoom.min
           maximum: Settings.LIMITS.maxZoom.max
-          step: 0.01
+          step: Settings.STEPS.maxZoom
           value: root.draft.maxZoom
+          // PanelSlider never applies `step` on the mouse path, so snap here;
+          // see snapToStep for why a raw drag value cannot be trusted.
           onMoved: function(v) {
-            root.edit("maxZoom", Settings.snapToStep(v, 0.01, Settings.LIMITS.maxZoom.min))
+            root.edit("maxZoom", Settings.snapToStep(v, Settings.STEPS.maxZoom, Settings.LIMITS.maxZoom.min))
           }
         }
 
-        // ------------------------------------------------------- pauseAtEnd
+        PanelSeparator { foreground: root.barForeground }
+
+        // --------------------------------------------------------- duration
+        PanelSectionHeader {
+          width: parent.width
+          text: "DURATION"
+          foreground: root.barForeground
+          fontFamily: root.fontFamily
+        }
+
         Text {
           width: parent.width
-          text: "Pause at end  " + Number(root.draft.pauseAtEnd).toFixed(1) + " s"
+          // One loop, not one traverse: the main leg is three quarters of this
+          // and the return takes the rest.
+          text: "Amount  " + Math.round(root.draft.duration) + " seconds"
           color: root.barForeground
           font.family: root.fontFamily
           font.pixelSize: Style.font.bodySmall
@@ -217,90 +250,36 @@ Panel {
         PanelSlider {
           width: parent.width
           bar: root.bar
-          minimum: Settings.LIMITS.pauseAtEnd.min
-          maximum: Settings.LIMITS.pauseAtEnd.max
-          step: 0.5
-          value: root.draft.pauseAtEnd
+          minimum: Settings.LIMITS.duration.min
+          maximum: Settings.LIMITS.duration.max
+          step: Settings.STEPS.duration
+          integer: true
+          value: root.draft.duration
           onMoved: function(v) {
-            root.edit("pauseAtEnd", Settings.snapToStep(v, 0.5, Settings.LIMITS.pauseAtEnd.min))
+            root.edit("duration", Settings.snapToStep(v, Settings.STEPS.duration, Settings.LIMITS.duration.min))
           }
         }
 
-        // ------------------------------------------------------- mode
-        Dropdown {
+        PanelSeparator { foreground: root.barForeground }
+
+        // ------------------------------------------------------ apply
+        Button {
+          id: applyBtn
           width: parent.width
-          label: "Direction mode"
+          text: root.dirty ? "Apply changes" : "Apply"
           fontFamily: root.fontFamily
-          options: Settings.modeOptions()
-          value: root.draft.mode
-          onChanged: function(v) { root.edit("mode", v) }
-        }
-
-        // ------------------------------------------------------- easing
-        Row {
-          width: parent.width
-          spacing: Style.space(10)
-
-          Text {
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - easingSwitch.width - parent.spacing
-            text: root.draft.smoothEasing ? "Smooth motion (ease in-out)" : "Smooth motion (linear)"
-            color: root.barForeground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.bodySmall
-          }
-
-          ToggleSwitch {
-            id: easingSwitch
-            anchors.verticalCenter: parent.verticalCenter
-            checked: root.draft.smoothEasing === true
-            foreground: root.barForeground
-            onToggled: root.edit("smoothEasing", !root.draft.smoothEasing)
-          }
-        }
-
-        Rectangle {
-          width: parent.width
-          height: 1
-          color: root.dim
-          opacity: 0.35
-        }
-
-        // ------------------------------------------------- apply / reset
-        Row {
-          width: parent.width
-          spacing: Style.space(8)
-
-          // Loads the defaults into the panel only. Apply is still required, so
-          // this is undoable by reopening the panel.
-          PanelActionButton {
-            id: resetBtn
-            anchors.verticalCenter: parent.verticalCenter
-            iconText: "\uf021"                       // Font Awesome refresh
-            tooltipText: "Load the defaults into the panel"
-            foreground: root.barForeground
-            onClicked: root.editAll(Settings.sanitize({}))
-          }
-
-          Button {
-            id: applyBtn
-            anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - resetBtn.width - parent.spacing
-            text: root.dirty ? "Apply changes" : "Apply"
-            fontFamily: root.fontFamily
-            // Deliberately NOT `selected`: this theme sets the selected-color
-            // token to #f6dcac, which is its foreground too, so a selected button
-            // reads as ordinary text on a faint wash. Driving the label and the
-            // fill from Color.accent (#faa968 here) makes the button the same
-            // orange as the "Unsaved changes" dot above it, so the two signals
-            // say the same thing at a glance.
-            foreground: root.dirty ? Color.accent : root.barForeground
-            accent: Color.accent
-            background: root.dirty ? Style.selectedAccentFill : "transparent"
-            bordered: true
-            opacity: root.dirty ? 1 : 0.6
-            onClicked: root.apply()
-          }
+          // Deliberately NOT `selected`: this theme sets the selected-color
+          // token to #f6dcac, which is its foreground too, so a selected button
+          // reads as ordinary text on a faint wash. Driving the label and the
+          // fill from Color.accent (#faa968 here) makes the button the same
+          // orange as the "Unsaved changes" dot above it, so the two signals
+          // say the same thing at a glance.
+          foreground: root.dirty ? Color.accent : root.barForeground
+          accent: Color.accent
+          background: root.dirty ? Style.selectedAccentFill : "transparent"
+          bordered: true
+          opacity: root.dirty ? 1 : 0.6
+          onClicked: root.apply()
         }
       }
     }

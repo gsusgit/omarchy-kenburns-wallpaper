@@ -7,30 +7,33 @@ Omarchy 4 (Quattro) plugin, Quickshell + QML.
 
 ## What it does, in numbers
 
-The move is a **cycle + dwell**: one traverse takes `duration`, then the image holds still for
-`pauseAtEnd`. A **pair** is two cycles — out and back — so every pair ends on the pose it started
-from and a fixed direction can never jump.
+The move is a **loop**: the zoom travels out to the far pose and back again over `duration`, along a
+single cosine. One cosine across the whole loop means zero velocity at both turnarounds and at the
+seam where the loop restarts, so the motion can neither stop nor jump. `direction` decides which pose
+the loop starts from — `in` grows from the whole image into the crop, `out` starts inside the crop and
+pulls back out of it. Both halves get exactly half of `duration`: an earlier version spent three
+quarters of the loop going out and a quarter coming back, and the three-times-quicker return read as a
+jump at the end of the move on a real desktop.
 
 | Parameter | Default | Range | Meaning |
 |---|---|---|---|
 | `enabled` | `true` | — | freezes the clock; the wallpaper stays painted |
-| `duration` | `20.0` s | 5–120 | one traverse |
-| `pauseAtEnd` | `2.0` s | 0–10 | the still window after it |
+| `duration` | `20.0` s | 5–60 | one whole loop, out and back |
 | `maxZoom` | `1.15` | 1.05–**1.30** | how far it zooms; the 1.30 cap is hard, above it the copy shows its pixels |
-| `mode` | `random` | zoomIn, zoomOut, horizontal, vertical, random | direction |
-| `smoothEasing` | `true` | — | ease-in-out (cosine) vs linear |
+| `direction` | `in` | in, out | which pose the loop starts from |
 
-`horizontal` and `vertical` pin the zoom at `maxZoom` and sweep sideways instead — that is what
-creates the margin to pan into, at the price of a permanent 15 % crop at the default.
+That is the entire schema. Everything else the plugin used to expose was removed after living with
+it — see the History table for what and why.
 
-**Speed is what makes motion visible, not size.** The first version moved 2 % over 90 s — that is
-0.7 px/s at the screen edge, and no eye catches it. The current default moves the image edge at
-several px/s, which you can see *and* still reads as calm. Raising `duration` calms it; the dwell is
-what makes it read as deliberate rather than as drift.
+Measured at the defaults on a 1920x1080 desktop: the image edge moves at a **median 16 px/s, peaking
+at 22.6 px/s** (the measured peak matches the analytic `maxZoom`·π/`duration` exactly), and the zoom
+sweeps the full **1.0000 → 1.1500**, i.e. 144 px of edge travel. **Speed is what makes motion visible,
+not size**: the first version moved 2 % over 90 s, which is 0.7 px/s at the edge, and no eye catches
+it. Raising `duration` is the calm knob.
 
-Measured on a 1920x1080 desktop: `omarchy-shell` costs **~11.8 %** of one core with the plugin on
-and **~11.1 %** off — about **+0.8 %**, at ~14 fps, with no blur and no per-frame shader change. The
-configuration adds no timers: the same single clock drives everything.
+`omarchy-shell` costs **5.9 %** of one core with the plugin on and **3.9 %** off — about **+2 %** at
+~14 fps, no blur and no per-frame shader change. The whole feature adds no timers: one clock drives
+everything.
 
 ## How it works
 
@@ -43,9 +46,9 @@ because that is the only way the image itself can move. Two consequences worth k
   as it did before; it never goes black.
 * **Wallpaper changes still look stock.** `inotifywait` on the Omarchy state directory catches a
   change within ~200 ms, and we re-implement Omarchy's own 420 ms slanted reveal (same `slant -0.18`
-  mask maths as `omarchy.background`) so a theme switch arrives looking the way it always did — it
-  just also breathes now. If the incoming image never becomes readable, a 4 s timer swaps anyway
-  rather than leaving a stale wallpaper on screen.
+  mask maths as `omarchy.background`) so a theme switch arrives looking the way it always did. If the
+  incoming image never becomes readable, a 4 s timer swaps anyway rather than leaving a stale
+  wallpaper on screen.
 
 | wl-layer-shell layer | Who paints there |
 |---|---|
@@ -64,9 +67,10 @@ The surface is **click-through** (`mask: Region { }`, an empty input region) and
 space (`exclusionMode: ExclusionMode.Ignore`), so desktop double-clicks still open Omarchy's
 background switcher and no window is shoved around.
 
-One clock drives everything: a single 14 fps `Timer` advances `clock`, and every animated value is
-`wave(period)` off it. No `NumberAnimation`s, no particle system (Qt's particle system runs its own
-frame ticker and would cost several times the repaints).
+One clock drives everything: a single 14 fps `Timer` advances `clock`, and every animated value is a
+pure function of it (`cosineWave(period)`, plus the exposure breath at its own much slower period).
+No `NumberAnimation`s, no particle system (Qt's particle system runs its own frame ticker and would
+cost several times the repaints).
 
 ## Install
 
@@ -93,25 +97,24 @@ The file is created with the defaults on first run, so there is nothing to set u
 ```json
 {
   "enabled": true,
-  "duration": 20.0,
+  "duration": 20,
   "maxZoom": 1.15,
-  "mode": "random",
-  "smoothEasing": true,
-  "pauseAtEnd": 2.0
+  "direction": "in"
 }
 ```
 
 `Settings.js` is the only place defaults, limits and validation live, shared by `Service.qml` (which
 applies them) and `Menu.qml` (which edits them). Everything is clamped and whitelisted on read, so a
-hand-edited or corrupted file can never break the renderer: unknown keys are dropped, `maxZoom` stops
-at 1.30, an unknown `mode` falls back to `random`, and unparseable text becomes the defaults.
+hand-edited or corrupted file can never break the renderer: unknown keys are dropped (including keys
+from an older schema), `maxZoom` stops at 1.30, an unknown `direction` falls back to `in`, and
+unparseable text becomes the defaults.
 
 The same values are reachable from a terminal — which is also how persistence is tested:
 
 ```bash
 qs ipc call animated-wallpaper status                  # the live config as JSON
 qs ipc call animated-wallpaper setDuration 45
-qs ipc call animated-wallpaper setMode horizontal      # labels work too: "Horizontal"
+qs ipc call animated-wallpaper setDirection out
 qs ipc call animated-wallpaper setMaxZoom 9            # clamped to 1.30 on write
 qs ipc call animated-wallpaper reset
 ```
@@ -130,15 +133,13 @@ not "simplify" it back.
 
 ## Tune
 
-Everything user-facing is in the menu (below) or `settings.json`. The remaining constants are the
+Everything user-facing is in the menu (below) or the settings file. The remaining constants are the
 `readonly` properties at the top of `Service.qml`:
 
 | Property | Default | Meaning |
 |---|---|---|
 | `exposureDepth` / `exposurePeriodMs` | `0.025` / `22000` | the room-light breath |
 | `frameMs` | `70` | repaint interval (~14 fps); `140` = ~7 fps, still smooth |
-| `panSplit` | `0.5` | how much of the zoom slack the horizontal/vertical pan uses; 1.0 is the safe maximum |
-| `blendSec` | `2.0` | cross-fade when a `random` pair changes direction |
 | `revealMs` | `420` | wallpaper-change reveal (matches Omarchy) |
 
 To calm it down: `duration: 45`, `maxZoom: 1.08`.
@@ -158,13 +159,18 @@ which switches from a dim `Apply` to an accent-filled `Apply changes`. Closing a
 panel keeps the draft, so an unsaved edit is never silently thrown away; the reset button (the ⟳
 icon) only loads the defaults *into the panel*, and still needs Apply.
 
-Controls: **Animate**, **Duration** (5–120 s), **Zoom level** (1.05–1.30×), **Pause at end** (0–10 s),
-the **Direction mode** dropdown and the **Smooth motion** toggle.
+The panel is deliberately small — **Animate** (a switch in the header, next to the reset button,
+because it is a transport control rather than a motion setting), then two sections:
 
-Sliders use their step (1 s / 0.01× / 0.5 s) because `PanelSlider` does not apply `step` itself — its
-mouse path only rounds when `integer: true`, so without `Settings.snapToStep` a drag would persist
-values like `1.1456522623697918` and the unsaved-changes comparison would then flicker on a stray
-pixel.
+| Section | Row | Control |
+|---|---|---|
+| ZOOM | Direction | `In` / `Out` segmented switch |
+| ZOOM | Level | slider, 1.05–1.30× |
+| DURATION | Amount | slider, 5–60 seconds (one whole loop) |
+
+Sliders use their step (1 s / 0.01×) because `PanelSlider` does not apply `step` itself — its mouse
+path only rounds when `integer: true`, so without `Settings.snapToStep` a drag would persist values
+like `1.1456522623697918` and the unsaved-changes comparison would then flicker on a stray pixel.
 
 ```bash
 omarchy bar put gsus.animated-wallpaper --section right --before omarchy.monitor   # place it
@@ -179,19 +185,20 @@ Rows for new controls go in the `Column` in `Menu.qml`; each one edits the draft
 ## Tests
 
 ```bash
-./tests/settings.test.sh    # 27 cases, seconds    -- the sanitiser, in node
-./tests/pose.test.sh        # 14 cases, ~2.5 min   -- the motion, from the plugin's own trace
-./tests/persist.test.sh     # 12 cases, ~40 s      -- write -> disk -> reload -> survives restart
+./tests/settings.test.sh    # 43 cases, seconds    -- the sanitiser, in node
+./tests/pose.test.sh        # 36 cases, ~1.5 min   -- the motion, from the plugin's own trace
+./tests/persist.test.sh     # 19 cases, ~40 s      -- write -> disk -> reload -> survives restart
 ```
 
 `pose.test.sh` asserts against a **pose trace** the service logs while a config loads
 (`[animated-wallpaper] pose {...}`, bounded to 60 s so it cannot grow without end). The trace prints
 the exact properties the window consumes, which makes the assertions deterministic — a
 screenshot-based suite would need this desktop to be idle, and it belongs to a human. It checks that
-a dwell is really still (`spread = 0`), that the cycle period is `duration + pauseAtEnd`, that
-`horizontal`/`vertical` pin the zoom and sweep sideways, that `zoomIn` never pans, that the cosine
-ease ramps (peak/mean slope ≈ 1.55 against 1.00 for linear), and that `random` never jumps at a pair
-boundary.
+the loop period is `duration`, that the zoom reaches `maxZoom` and returns to 1.0, that the pose
+never jumps at the seam, that neither extreme is dwelt on, that **both halves run at the same pace**
+(the regression test for the 3/4–1/4 split), that the zoom follows one cosine across the loop (max
+deviation 0.00000 against an independent reimplementation), that the cosine's peak/mean slope is
+≈1.56 against 1.00 for a linear ramp, and that `out` really starts from the zoomed-in pose.
 
 `persist.test.sh` drives the real write path over IPC — the same `set()`/`save()` pair the menu
 calls — then restarts the shell and re-reads the config.
@@ -230,16 +237,14 @@ Two more traps this plugin walked into, both worth knowing before adding a widge
   omarchy bar put gsus.animated-wallpaper --section right --before omarchy.monitor
   ```
 
-
 ## Not in this iteration
 
 * GIF/WebP wallpapers do not animate (Omarchy's renderer uses `Image`, not `AnimatedImage`; that file
   is root-owned).
 * No per-wallpaper art, no video wallpapers.
 * No cursor parallax (Quickshell 0.3.1 exposes no cursor position) and no audio reactivity yet.
-* `duration` is one traverse, not a full round trip: a complete pair takes `2 × (duration +
-  pauseAtEnd)`. The menu's sliders have no keyboard focus yet, and the panel cursor does not walk
-  them — mouse only for now.
+* The menu's sliders have no keyboard focus yet and the panel cursor does not walk them — mouse only
+  for now.
 
 ## History
 
@@ -253,3 +258,5 @@ Two more traps this plugin walked into, both worth knowing before adding a widge
 | 0.6 | placeable in the bar: `BarWidget.qml` (button) + `Menu.qml` (small panel with live state and an Animate switch) |
 | 0.7 | configurable: the continuous sine becomes a cycle + dwell engine driven by a settings file, with sliders, a direction dropdown and an easing toggle in the menu, an IPC surface, and 43 test cases |
 | 0.8 | the panel edits a local draft behind an **Apply** button with visible unsaved-changes feedback; the settings file moved out of the plugin directory (writing it there reloaded the plugin four times per save and unmapped the panel), and slider drags snap to their step |
+| 2.0 | motion dynamics: presets, a binary In/Out direction, handheld shake, a breathing loop, and `pauseAtEnd` removed. All four extras were then dropped as redundant — see below |
+| **3.0** | **the small version: four values, one cosine, nothing else.** `preset` (a shortcut through the other values, not an effect of its own), `handheld` (a ~50 px wobble on a 40 s traverse read as the wallpaper vibrating rather than as a hand), `breathing` (its "off" state is a hard snap back, its "on" state left the direction switch looking inert) and `smoothEasing` (ease-in-out is simply the better default) are all gone. The loop became symmetric because the 3/4–1/4 split's quicker return read as a jump at the end; the pan layer went with the shake |
