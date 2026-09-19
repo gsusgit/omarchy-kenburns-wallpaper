@@ -386,8 +386,12 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    console.log("[animated-wallpaper] ready v3.0: screens=" + Quickshell.screens.length
-      + " config=" + JSON.stringify(root.config))
+    // No config in this line on purpose: the FileView has not read the file yet at
+    // this point, so it would print the DEFAULTS and read as if the plugin had reset
+    // itself -- which is exactly how it read while chasing a settings file that had
+    // genuinely been overwritten. The real config is logged by applyConfig a moment
+    // later as "config: {...}"; that is the line to trust.
+    console.log("[animated-wallpaper] ready v3.0: screens=" + Quickshell.screens.length)
   }
 
   Variants {
