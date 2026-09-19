@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "gsus.animated-wallpaper",
+  "name": "Animated Wallpaper",
+  "version": "0.1.0",
+  "author": "gsus",
+  "description": "A subtle breathing glow over the wallpaper. It only reads the theme accent, so it works with every wallpaper and every theme.",
+  "kinds": ["service"],
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
