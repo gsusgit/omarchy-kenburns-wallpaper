@@ -11,14 +11,19 @@ Everything is scaled by a single dial: `motion` (`0.02` = the shipped 2%).
 
 | Effect | Magnitude | Period |
 |---|---|---|
-| Ken Burns zoom | 1.000 → 1.020 | 90 s |
-| Pan | ±8 px horizontally, ±6 px vertically | 140 s |
-| Exposure | 0 → 2 % darker, then back | 25 s |
-| Bloom (accent-tinted haze) | 0 → 10 % alpha | 11 s |
-| Motes (dust in the light) | 18 specks, ≤5 % alpha | 55–100 s rise |
+| Ken Burns zoom | 1.000 → 1.070 | 34 s |
+| Pan | up to ±44 px, tied to the zoom slack | 47 s |
+| Exposure | 0 → 2.5 % darker, then back | 22 s |
+| Bloom (accent-tinted haze) | 0 → 14 % alpha, and it wanders across the screen | 9 s |
+| Glint (a band of light crossing) | 0 → 7 % alpha | 42 s |
+| Motes (dust in the light) | 26 specks, ≤8 % alpha | 40–80 s rise |
 
-Measured on a 1920x1080 desktop: `omarchy-shell` costs **12.3 %** of one core with the plugin on,
-**11.1 %** off — about **+1.2 %**, at ~14 fps, with no blur and no per-frame shader change.
+**Speed is what makes motion visible, not size.** The first version moved 2 % over 90 s — that is
+0.7 px/s at the screen edge, and no eye catches it. The current preset moves the image edge at
+~6 px/s, which you can see *and* still reads as calm.
+
+Measured on a 1920x1080 desktop: `omarchy-shell` costs **11.8 %** of one core with the plugin on and
+**11.1 %** off — about **+0.8 %**, at ~14 fps, with no blur and no per-frame shader change.
 
 ## How it works
 
@@ -70,17 +75,22 @@ The knobs are the `readonly` properties at the top of `Service.qml`:
 
 | Property | Default | Meaning |
 |---|---|---|
-| `motion` | `0.02` | the whole dial: zoom, pan, exposure all scale with it. `0.05` unmistakable, `0.01` a rumour |
+| `motion` | `0.07` | the zoom/pan dial: peak zoom is `1 + motion`. `0.03` barely alive, `0.12` obvious |
+| `scalePeriodMs` | `34000` | one in-and-out zoom — shorten it (not raise `motion`) to make the motion read faster |
+| `panPeriodMs` | `47000` | one pan orbit |
+| `panAmount` | `0.65` | fraction of the zoom slack the pan uses; 1.0 is the safe maximum |
+| `exposureDepth` / `exposurePeriodMs` | `0.025` / `22000` | the room-light breath |
+| `bloomIntensity` / `bloomPeriodMs` | `0.14` / `9000` | the haze |
+| `glintOpacity` / `glintPeriodMs` | `0.07` / `42000` | the travelling light band |
+| `moteCount` / `moteAlpha` | `26` / `0.08` | the dust |
 | `frameMs` | `70` | repaint interval (~14 fps); `140` = ~7 fps, still smooth |
-| `scalePeriodMs` | `90000` | one in-and-out zoom |
-| `panPeriodMs` | `140000` | one pan orbit |
-| `exposurePeriodMs` | `25000` | one exposure breath |
-| `bloomPeriodMs` / `bloomIntensity` | `11000` / `0.10` | the haze |
-| `moteCount` / `moteAlpha` | `18` / `0.05` | the dust |
 | `revealMs` | `420` | wallpaper-change reveal (matches Omarchy) |
 
+To calm it down without killing it: `motion: 0.04`, `glintOpacity: 0.04`, `moteAlpha: 0.05`.
+
 If the fine detail of a busy illustration shimmers (sub-pixel resampling on stippled line art),
-lengthen `panPeriodMs` or lower `motion` — that shimmer is the price of a moving image.
+lengthen `panPeriodMs`, raise `scalePeriodMs` or lower `motion` — that shimmer is the price of a
+moving image.
 
 ## Disable / remove
 
