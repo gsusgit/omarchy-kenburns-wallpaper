@@ -182,6 +182,11 @@ Item {
     interval: root.traceMs
     running: root.tracing
     repeat: true
+    // The trace the test suites read. The units matter to whoever parses it: `t` is
+    // MILLISECONDS of the plugin's own clock, `seg` is the position in the loop
+    // (0..1), `z` is the scale factor (1.0 up to maxZoom), and `x`/`y` are the pan
+    // as a fraction of the margin the zoom opens. Reading `t` as seconds gives
+    // silently zero speeds -- a measurement of mine went wrong exactly that way.
     onTriggered: console.log("[animated-wallpaper] pose " + JSON.stringify({
       t: Math.round(root.clock),
       cy: root.loopIndex,

@@ -229,7 +229,10 @@ Rows for new controls go in the `Column` in `Menu.qml`; each one edits the draft
 ```
 
 `pose.test.sh` asserts against a **pose trace** the service logs while a config loads
-(`[animated-wallpaper] pose {...}`, bounded to 90 s so it cannot grow without end). The trace prints
+(`[animated-wallpaper] pose {...}`, bounded to 90 s so it cannot grow without end). In the trace `t` is
+**milliseconds** of the plugin's clock, `seg` is the position in the loop (0..1), `z` is the scale
+factor and `x`/`y` are the pan as a fraction of the margin — reading `t` as seconds gives zero speeds
+and a measurement that looks like a broken engine. The trace prints
 the exact properties the window consumes, which makes the assertions deterministic — a
 screenshot-based suite would need this desktop to be idle, and it belongs to a human. It checks that
 the loop period is `speed`, that the zoom reaches `maxZoom` and returns to 1.0, that the pose
