@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import qs.Commons
 import qs.Ui
 
 // Bar entry point for Ken Burns Wallpaper.
@@ -70,9 +71,12 @@ BarWidget {
     bar: root.bar
     tooltipText: root.animating ? "Ken Burns - ON" : "Ken Burns - OFF"
     iconComponent: Component {
-      ApertureIcon {
-        anchors.fill: parent
-        color: button.foreground
+      Item {
+        ApertureIcon {
+          anchors.centerIn: parent
+          iconSize: Style.space(12)
+          color: button.foreground
+        }
       }
     }
     onPressed: function(buttonCode) {

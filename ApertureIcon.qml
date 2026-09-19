@@ -1,18 +1,24 @@
 import QtQuick
 import QtQuick.Shapes
+import qs.Commons
 
 // Lucide "aperture" (24×24 viewBox). Stroke follows `color` so the bar
 // Light/Dark theme tints it the same way as the rest of the icons.
+// Sized like Omarchy's own custom bar marks (Dropbox uses Style.space(12)).
 Item {
   id: root
   property color color: "white"
+  property real iconSize: Style.space(12)
 
-  readonly property real unit: Math.min(width, height) / 24
+  width: iconSize
+  height: iconSize
+  implicitWidth: iconSize
+  implicitHeight: iconSize
+
+  readonly property real unit: iconSize / 24
 
   Shape {
-    anchors.centerIn: parent
-    width: 24 * root.unit
-    height: 24 * root.unit
+    anchors.fill: parent
     antialiasing: true
     preferredRendererType: Shape.CurveRenderer
 
