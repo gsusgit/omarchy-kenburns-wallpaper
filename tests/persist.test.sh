@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"drift":"center","driftLength":0.5}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"drift":"center"}'
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -67,8 +67,8 @@ printf '%s\n' "$DEFAULT" > "$SETTINGS"     # a known baseline to assert against
 sleep 2
 check "status starts at the defaults" "$DEFAULT" "$(ipc status)"
 
-echo "-- the file holds exactly the five values"
-check "the key set is closed" 'drift,driftLength,duration,enabled,maxZoom' \
+echo "-- the file holds exactly the four values"
+check "the key set is closed" 'drift,duration,enabled,maxZoom' \
   "$(python3 -c "import json;print(','.join(sorted(json.load(open('$SETTINGS')).keys())))")"
 check "pauseAtEnd is not in the file" "keyerror" "$(disk pauseAtEnd 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "mode is not in the file" "keyerror" "$(disk mode 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
@@ -76,21 +76,27 @@ check "preset is not in the file" "keyerror" "$(disk preset 2>&1 | grep -o 'KeyE
 check "handheld is not in the file" "keyerror" "$(disk handheld 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "breathing is not in the file" "keyerror" "$(disk breathing 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "smoothEasing is not in the file" "keyerror" "$(disk smoothEasing 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+check "direction is not in the file" "keyerror" "$(disk direction 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+check "driftLength is not in the file" "keyerror" "$(disk driftLength 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 
 echo "-- writing each key through IPC"
-ipc setDuration 45 >/dev/null
-wait_for_disk "d['duration'] == 45" 6 && check "duration reached the settings file" "45" "$(disk duration)" \
-  || check "duration reached the settings file" "45" "timeout"
+ipc setDuration 40 >/dev/null
+wait_for_disk "d['duration'] == 40" 6 && check "duration reached the settings file" "40" "$(disk duration)" \
+  || check "duration reached the settings file" "40" "timeout"
 sleep 2
-check "and the engine applied it" "45" "$(ipc status | live duration)"
+check "and the engine applied it" "40" "$(ipc status | live duration)"
 
-ipc setDuration 500 >/dev/null          # far above the 60 s ceiling
-wait_for_disk "d['duration'] == 60" 6 && check "duration is clamped to the 60 s ceiling" "60" "$(disk duration)" \
-  || check "duration is clamped to the 60 s ceiling" "60" "timeout"
+ipc setDuration 45 >/dev/null             # between two levels: a tie, which goes up
+wait_for_disk "d['duration'] == 50" 6 && check "a duration between levels snaps to the nearest" "50" "$(disk duration)" \
+  || check "a duration between levels snaps to the nearest" "50" "timeout"
 
-ipc setDuration 1 >/dev/null            # far below the 5 s floor
-wait_for_disk "d['duration'] == 5" 6 && check "duration is clamped up to the 5 s floor" "5" "$(disk duration)" \
-  || check "duration is clamped up to the 5 s floor" "5" "timeout"
+ipc setDuration 500 >/dev/null            # far above the top level
+wait_for_disk "d['duration'] == 60" 6 && check "duration is clamped to the top level" "60" "$(disk duration)" \
+  || check "duration is clamped to the top level" "60" "timeout"
+
+ipc setDuration 1 >/dev/null              # far below the bottom level
+wait_for_disk "d['duration'] == 20" 6 && check "duration is clamped to the bottom level" "20" "$(disk duration)" \
+  || check "duration is clamped to the bottom level" "20" "timeout"
 
 ipc setMaxZoom 9 >/dev/null             # far above the 1.30 cap
 wait_for_disk "d['maxZoom'] == 1.3" 6 && check "maxZoom is clamped to the 1.30 cap" "1.3" "$(disk maxZoom)" \
@@ -104,35 +110,20 @@ ipc setDrift sideways >/dev/null
 wait_for_disk "d['drift'] == 'center'" 6 && check "an unknown drift falls back to centre" "center" "$(disk drift)" \
   || check "an unknown drift falls back to centre" "center" "timeout"
 
-ipc setDriftLength 0.8 >/dev/null
-wait_for_disk "d['driftLength'] == 0.8" 6 && check "the drift length persists" "0.8" "$(disk driftLength)" \
-  || check "the drift length persists" "0.8" "timeout"
-
-ipc setDriftLength 5 >/dev/null          # far above the 0.9 ceiling
-wait_for_disk "d['driftLength'] == 0.9" 6 && check "the length is clamped to the 0.9 ceiling" "0.9" "$(disk driftLength)" \
-  || check "the length is clamped to the 0.9 ceiling" "0.9" "timeout"
-
-ipc setDriftLength -2 >/dev/null         # below the floor
-wait_for_disk "d['driftLength'] == 0" 6 && check "a negative length clamps to zero" "0" "$(disk driftLength)" \
-  || check "a negative length clamps to zero" "0" "timeout"
-
-ipc setDriftLength 0.8 >/dev/null
-wait_for_disk "d['driftLength'] == 0.8" 6
-
-ipc setDuration 42 >/dev/null
+ipc setDuration 50 >/dev/null
 ipc setMaxZoom 1.25 >/dev/null
 wait_for_disk "d['maxZoom'] == 1.25" 6
 
 echo "-- surviving a restart (the acceptance criterion)"
 sleep 2
-check "the values are in place before the restart" "42|1.25|center|0.8" \
-  "$(disk duration)|$(disk maxZoom)|$(disk drift)|$(disk driftLength)"
+check "the values are in place before the restart" "50|1.25|center" \
+  "$(disk duration)|$(disk maxZoom)|$(disk drift)"
 omarchy-restart-shell >/dev/null 2>&1
 sleep 10
 SHELL_PID=$(qs list --all | awk '/Process ID/{print $3; exit}')
 check "the shell came back" "true" "$([[ -n $SHELL_PID ]] && echo true || echo false)"
-check "and the values survived the restart" "42|1.25|center|0.8" \
-  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live drift)|$(ipc status | live driftLength)"
+check "and the values survived the restart" "50|1.25|center" \
+  "$(ipc status | live duration)|$(ipc status | live maxZoom)|$(ipc status | live drift)"
 
 echo "-- reset"
 ipc reset >/dev/null

@@ -1,7 +1,7 @@
 #!/bin/bash
-# Behaviour tests for the Ken Burns engine (v3.2: duration, maxZoom, drift, driftLength).
+# Behaviour tests for the Ken Burns engine (v3.3: duration levels, maxZoom, drift).
 #
-# They read the plugin's own pose trace (a bounded 60 s trace started on every
+# They read the plugin's own pose trace (a bounded 90 s trace started on every
 # config load) out of the journal instead of taking screenshots: the trace
 # prints the exact properties the window consumes, so the assertions are
 # deterministic and immune to whatever window happens to have focus -- this
@@ -17,7 +17,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
-DEFAULT='{"enabled":true,"duration":20.0,"maxZoom":1.15,"drift":"center","driftLength":0.5}'
+DEFAULT='{"enabled":true,"duration":20.0,"maxZoom":1.15,"drift":"center"}'
 # These suites write the same file the panel writes, so they put back whatever was
 # there when they started: wiping a human's settings is not a test's business.
 BACKUP="$(mktemp)"
@@ -77,15 +77,15 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
   return 1
 }
 
-# duration 5 is the floor and keeps the suite short, so a loop is exactly 5 s
-# (2.5 s out + 2.5 s back) and the capture windows are whole numbers of loops
-# plus a margin.
-scenario loop '{"enabled":true,"duration":5.0,"maxZoom":1.20}'  21 loop 5.0 1.20
-scenario ease '{"enabled":true,"duration":5.0,"maxZoom":1.20}'  13 ease 1.20
-# The drift is its own axis: any zoom can creep any way, including a diagonal.
-# The two scenarios differ only in length, which is what the length control is.
-scenario driftDiag  '{"enabled":true,"duration":5.0,"maxZoom":1.20,"drift":"upLeft"}' 13 drift -1 -1 0.5
-scenario driftShort '{"enabled":true,"duration":5.0,"maxZoom":1.20,"drift":"right","driftLength":0.2}' 13 drift 1 0 0.2
+# The duration is one of five levels and 20 s is the shortest, so a loop is 20 s
+# and the capture windows are whole numbers of loops plus a margin. That is the
+# price of a level-based control: this suite used to run at 5 s loops.
+scenario loop '{"enabled":true,"duration":20,"maxZoom":1.20}'  68 loop 20 1.20
+scenario ease '{"enabled":true,"duration":20,"maxZoom":1.20}'  46 ease 1.20
+# The drift is its own axis: any zoom can creep any way, including a diagonal. Its
+# length is fixed at 0.9 of the margin (see Service.qml), which is what the
+# analyser is told to expect.
+scenario driftDiag '{"enabled":true,"duration":20,"maxZoom":1.20,"drift":"upLeft"}' 46 drift -1 -1 0.9
 
 echo "pose tests: $scenarios scenarios, $fails failures"
 exit $(( fails > 0 ))

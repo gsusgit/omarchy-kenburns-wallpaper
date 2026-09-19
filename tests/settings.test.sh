@@ -18,11 +18,11 @@ run() {
   node tests/lib/run-settings.js "$1" 2>&1
 }
 
-DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"drift":"center","driftLength":0.5}'
+DEFAULT='{"enabled":true,"duration":20,"maxZoom":1.15,"drift":"center"}'
 
 # ---------------------------------------------------------------- the schema
 check "empty input gives the documented defaults" "$DEFAULT" "$(run 'S.sanitize({})')"
-check "the schema is exactly five values" 'enabled,duration,maxZoom,drift,driftLength' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
+check "the schema is exactly four values" 'enabled,duration,maxZoom,drift' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
 check "preset is gone" 'undefined' "$(run 'typeof S.sanitize({preset: "classicCinema"}).preset')"
 check "handheld is gone" 'undefined' "$(run 'typeof S.sanitize({handheld: true}).handheld')"
 check "breathing is gone" 'undefined' "$(run 'typeof S.sanitize({breathing: false}).breathing')"
@@ -31,12 +31,49 @@ check "pauseAtEnd is gone" 'undefined' "$(run 'typeof S.sanitize({pauseAtEnd: 3}
 check "mode is gone" 'undefined' "$(run 'typeof S.sanitize({mode: "random"}).mode')"
 
 # ------------------------------------------------------------------- clamping
-check "duration clamps to the 60 ceiling" '{"enabled":true,"duration":60,"maxZoom":1.15,"drift":"center","driftLength":0.5}' "$(run 'S.sanitize({duration: 500})')"
-check "duration below the floor clamps to 5" '{"enabled":true,"duration":5,"maxZoom":1.15,"drift":"center","driftLength":0.5}' "$(run 'S.sanitize({duration: 4})')"
-check "the duration ceiling is 60" '60' "$(run 'S.LIMITS.duration.max')"
-check "the duration floor is 5" '5' "$(run 'S.LIMITS.duration.min')"
-check "maxZoom clamps to the 1.30 cap" '1.3' "$(run 'S.sanitize({maxZoom: 9}).maxZoom')"
-check "maxZoom clamps up to the 1.05 floor" '1.05' "$(run 'S.sanitize({maxZoom: 1.0}).maxZoom')"
+# ------------------------------------------------------------------ duration
+# The duration is one of five levels, not a free number, because the panel walks
+# it with a stepper and a stepper cannot represent an arbitrary value.
+check "there are five duration levels" '20,30,40,50,60' "$(run 'S.DURATION_LEVELS.join(",")')"
+check "a value between levels snaps down" '20' "$(run 'S.sanitize({duration: 22}).duration')"
+check "a value nearer the next level snaps up" '30' "$(run 'S.sanitize({duration: 26}).duration')"
+check "a tie snaps up, as documented" '50' "$(run 'S.sanitize({duration: 45}).duration')"
+check "a value above the top level clamps to it" '60' "$(run 'S.sanitize({duration: 500}).duration')"
+check "a value below the bottom level clamps to it" '20' "$(run 'S.sanitize({duration: 1}).duration')"
+check "a nonsense duration falls back to the default" '20' "$(run 'S.sanitize({duration: "long"}).duration')"
+check "the duration limits are the level ends" '20,60' "$(run '[S.LIMITS.duration.min,S.LIMITS.duration.max].join(",")')"
+check "every level survives sanitising" '20,30,40,50,60' \
+  "$(run 'S.DURATION_LEVELS.map(function(d){return S.sanitize({duration: d}).duration}).join(",")')"
+check "the level index of the default is zero" '0' "$(run 'S.durationLevelIndex(20)')"
+check "the level index of the top level is four" '4' "$(run 'S.durationLevelIndex(60)')"
+check "the level index snaps like the value does" '2' "$(run 'S.durationLevelIndex(41)')"
+check "an unreadable value indexes as the default" '0' "$(run 'S.durationLevelIndex("soon")')"
+
+# The SPEED control walks the levels backwards, because a short loop is the fast
+# one: 0 is the slowest (60 s) and the last index is the fastest (20 s).
+check "the speed index of the shortest loop is the fastest" '4' "$(run 'S.speedLevelIndex(20)')"
+check "the speed index of the longest loop is the slowest" '0' "$(run 'S.speedLevelIndex(60)')"
+check "the slowest speed is the longest duration" '60' "$(run 'S.durationForSpeedIndex(0)')"
+check "the fastest speed is the shortest duration" '20' "$(run 'S.durationForSpeedIndex(4)')"
+check "a speed index above the range clamps to the fastest" '20' "$(run 'S.durationForSpeedIndex(9)')"
+check "a speed index below the range clamps to the slowest" '60' "$(run 'S.durationForSpeedIndex(-3)')"
+check "a nonsense speed index falls back to the default" '20' "$(run 'S.durationForSpeedIndex("quick")')"
+check "speed and duration round-trip through every level" 'true' \
+  "$(run 'S.DURATION_LEVELS.every(function(d){return S.durationForSpeedIndex(S.speedLevelIndex(d)) === d})')"
+check "one step of speed is one level shorter" 'true' \
+  "$(run 'S.DURATION_LEVELS.slice(1).every(function(d,i){return S.durationForSpeedIndex(S.speedLevelIndex(d)+1) === S.DURATION_LEVELS[i]})')"
+# The zoom is five levels too, for the same reason as the duration.
+check "there are five zoom levels" '1.1,1.15,1.2,1.25,1.3' "$(run 'S.MAXZOOM_LEVELS.join(",")')"
+check "a zoom above the top level clamps to it" '1.3' "$(run 'S.sanitize({maxZoom: 9}).maxZoom')"
+check "a zoom below the bottom level clamps to it" '1.1' "$(run 'S.sanitize({maxZoom: 1.0}).maxZoom')"
+check "a fractional zoom snaps to the nearest level" '1.1' "$(run 'S.sanitize({maxZoom: 1.12}).maxZoom')"
+check "a zoom nearer the next level snaps up" '1.15' "$(run 'S.sanitize({maxZoom: 1.13}).maxZoom')"
+check "the zoom limits are the level ends" '1.1,1.3' "$(run '[S.LIMITS.maxZoom.min,S.LIMITS.maxZoom.max].join(",")')"
+check "every zoom level survives sanitising" '1.1,1.15,1.2,1.25,1.3' \
+  "$(run 'S.MAXZOOM_LEVELS.map(function(z){return S.sanitize({maxZoom: z}).maxZoom}).join(",")')"
+check "the zoom level index of the default is one" '1' "$(run 'S.maxZoomLevelIndex(1.15)')"
+check "the zoom level index of the top level is four" '4' "$(run 'S.maxZoomLevelIndex(1.3)')"
+check "an unreadable zoom indexes as the default" '1' "$(run 'S.maxZoomLevelIndex("lots")')"
 
 # ------------------------------------------------------------------ direction
 # Removed in 3.2: with a symmetric loop, "in" and "out" are the same oscillation
@@ -57,7 +94,7 @@ check "unreadable enabled keeps its default" 'true' "$(run 'S.sanitize({enabled:
 check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, duration: 20})')"
 check "garbage text parses to the defaults" "$DEFAULT" "$(run 'S.parse("not json at all")')"
 check "null parses to the defaults" "$DEFAULT" "$(run 'S.parse(null)')"
-check "an old v2 file keeps only what still exists" '{"enabled":true,"duration":42,"maxZoom":1.25,"drift":"center","driftLength":0.5}' \
+check "an old v2 file keeps only what still exists" '{"enabled":true,"duration":40,"maxZoom":1.25,"drift":"center"}' \
   "$(run 'S.sanitize({preset: "custom", enabled: true, duration: 42, maxZoom: 1.25, direction: "out", smoothEasing: true, handheld: true, breathing: true})')"
 
 # ------------------------------------------------------------------- drift
@@ -80,38 +117,31 @@ check "the centre vector is zero" '0,0' "$(run 'S.driftVector("center").join(","
 check "serialise writes the drift" 'true' "$(run 'S.serialise({drift: "up"}).indexOf("\"drift\": \"up\"") > 0')"
 
 # -------------------------------------------------------------- drift length
-check "the length defaults to half the margin" '0.5' "$(run 'S.sanitize({}).driftLength')"
-check "the length clamps to the 0.9 ceiling" '0.9' "$(run 'S.sanitize({driftLength: 5}).driftLength')"
-check "the ceiling is below 1.0 on purpose" '0.9' "$(run 'S.LIMITS.driftLength.max')"
-check "a negative length clamps to zero" '0' "$(run 'S.sanitize({driftLength: -1}).driftLength')"
-check "a nonsense length falls back to the default" '0.5' "$(run 'S.sanitize({driftLength: "wide"}).driftLength')"
-check "the length steps by five percent" '0.05' "$(run 'S.STEPS.driftLength')"
-check "a length drag snaps to its step" '0.35' "$(run 'S.snapToStep(0.3412, 0.05, 0)')"
+# Removed in 3.3: the length is fixed at the ceiling (see Service.qml).
+check "driftLength is gone from the schema" 'undefined' "$(run 'typeof S.sanitize({driftLength: 0.2}).driftLength')"
+check "an old file's driftLength is dropped" 'false' "$(run 'Object.keys(S.sanitize({driftLength: 0.2})).indexOf("driftLength") >= 0')"
+check "there are no driftLength limits left" 'undefined' "$(run 'typeof S.LIMITS.driftLength')"
 
 # --------------------------------------------------------------- serialising
-check "serialise round-trips canonically" '{"enabled":true,"duration":12,"maxZoom":1.25,"drift":"upLeft","driftLength":0.5}' \
-  "$(run 'JSON.parse(S.serialise({duration: 12, maxZoom: 1.25, drift: "upLeft"}))')"
+check "serialise round-trips canonically" '{"enabled":true,"duration":30,"maxZoom":1.25,"drift":"upLeft"}' \
+  "$(run 'JSON.parse(S.serialise({duration: 30, maxZoom: 1.25, drift: "upLeft"}))')"
 check "serialise never writes a removed key" 'false' \
-  "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode","direction"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
+  "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode","direction","driftLength"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
 
 # The panel's unsaved-changes flag is `serialise(draft) != serialise(applied)`,
 # so equality has to be canonical or the warning lights up on an untouched panel.
 check "equal configs compare equal" 'true' "$(run 'S.serialise({duration: 20}) === S.serialise(S.DEFAULTS)')"
 check "a numeric string is not a change" 'true' "$(run 'S.serialise({duration: "20"}) === S.serialise({duration: 20})')"
 check "key order is not a change" 'true' "$(run 'S.serialise({drift: "up", duration: 30}) === S.serialise({duration: 30, drift: "up"})')"
-check "a real change is detected" 'false' "$(run 'S.serialise({duration: 21}) === S.serialise({duration: 20})')"
+check "a real change is detected" 'false' "$(run 'S.serialise({duration: 30}) === S.serialise({duration: 20})')"
 check "flipping the drift is a change" 'false' "$(run 'S.serialise({drift: "left"}) === S.serialise({drift: "right"})')"
 
-# ------------------------------------------------------------------ snapping
-# PanelSlider's mouse path never applies `step` (it only honours `integer`), so
-# the panel snaps. 1.15 / 0.01 is 114.99999999999999 and 1.05 + 10 * 0.01 is
-# 1.1500000000000001: both traps are covered here.
-check "a zoom drag snaps to its 0.01 step" '1.15' "$(run 'S.snapToStep(1.1456522623697918, 0.01, 1.05)')"
-check "snapping keeps the value on the grid" '1.09' "$(run 'S.snapToStep(1.0949, 0.01, 1.05)')"
-check "an integer step stays whole" '34' "$(run 'S.snapToStep(33.7, 1, 5)')"
-check "snapping does not drift below the minimum" '1.05' "$(run 'S.snapToStep(1.0500000001, 0.01, 1.05)')"
-check "a nonsense step leaves the value alone" '1.234' "$(run 'S.snapToStep(1.234, 0, 1)')"
-check "the panel steps are one per slider" '{"duration":1,"maxZoom":0.01,"driftLength":0.05}' "$(run 'JSON.stringify(S.STEPS)')"
+# -------------------------------------------------------------- level sliders
+# Both sliders are driven by the LEVEL INDEX and round with `integer: true`, so
+# there is no fractional snapping left to do -- and `snapToStep`, which existed to
+# fix up PanelSlider's mouse path (it never applies `step`), went with it.
+check "no slider steps are left" 'undefined' "$(run 'typeof S.STEPS')"
+check "no fractional snapping helper is left" 'undefined' "$(run 'typeof S.snapToStep')"
 
 (( fails == 0 )) && echo "settings tests: OK" || echo "settings tests: FAILED ($fails)"
 exit $(( fails > 0 ))

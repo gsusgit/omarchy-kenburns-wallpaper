@@ -41,7 +41,7 @@ Item {
   readonly property int exposurePeriodMs: 22000
   readonly property int revealMs: 420
   readonly property int traceMs: 150           // pose trace interval (tests read it)
-  readonly property int traceWindowMs: 60000   // trace is bounded: no line-per-second forever
+  readonly property int traceWindowMs: 90000   // trace is bounded: no line-per-second forever
 
   readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "gsus.animated-wallpaper"
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + pluginId
@@ -125,7 +125,6 @@ Item {
     function setDuration(value: string): void { root.applyIpc("duration", value) }
     function setMaxZoom(value: string): void { root.applyIpc("maxZoom", value) }
     function setDrift(value: string): void { root.applyIpc("drift", value) }
-    function setDriftLength(value: string): void { root.applyIpc("driftLength", value) }
 
     function reset(): void {
       root.config = Settings.sanitize({})
@@ -232,9 +231,16 @@ Item {
   // (zoom - 1) / 2, never on absolute pixels -- so at zoom 1 there is no drift,
   // and no combination of settings can pull the image inside the window and show
   // a black edge.
+  // Fixed, not configurable: a Length slider was tried and removed. Its useful
+  // range is narrow (the visible difference between 30 % and 60 % is small next to
+  // the zoom it rides on) and the ceiling is what you want anyway. 0.9 rather than
+  // 1.0 on purpose: at 1.0 the image edge lands exactly on the screen edge, so a
+  // sub-pixel rounding could show a hairline of whatever is underneath. 0.9 leaves
+  // ~14 px of slack at the default zoom.
+  readonly property real driftLength: 0.9
   readonly property var driftVector: Settings.driftVector(config.drift)
-  readonly property real panX: driftVector[0] * config.driftLength
-  readonly property real panY: driftVector[1] * config.driftLength
+  readonly property real panX: driftVector[0] * driftLength
+  readonly property real panY: driftVector[1] * driftLength
   readonly property real panOffsetX: panX * (zoom - 1) / 2   // as a fraction of the screen
   readonly property real panOffsetY: panY * (zoom - 1) / 2
 

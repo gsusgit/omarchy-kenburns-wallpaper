@@ -12,12 +12,13 @@
 // inert) and `smoothEasing` (ease-in-out is simply the better default; the toggle
 // only offered a worse one).
 //
-// Five values remain, and each one changes something you can see: whether it
-// moves, how long the loop takes, how far it zooms, which way it drifts, and how
-// far. There is no zoom-direction control: with a symmetric loop, "in" and "out"
-// are the same oscillation half a period apart, so the switch could only ever
-// choose the pose you start on -- and the loop never stops, so that is invisible
-// within seconds.
+// Four values remain, and each one changes something you can see: whether it
+// moves, how long the loop takes, how far it zooms, and which way it drifts.
+// There is no zoom-direction control: with a symmetric loop, "in" and "out" are
+// the same oscillation half a period apart, so the switch could only ever choose
+// the pose you start on -- invisible within seconds of a loop that never stops.
+// The drift's length is fixed too (see Service.qml): its useful range is narrow,
+// and the ceiling is what you want anyway.
 
 // The drift is the move's other axis: which way the image creeps while the zoom
 // opens. It is a vector, so the eight compass points plus "centre" cover every
@@ -79,49 +80,72 @@ var DEFAULTS = {
   enabled: true,
   duration: 20.0,
   maxZoom: 1.15,
-  drift: "center",
-  driftLength: 0.5
+  drift: "center"
 }
+
+// The duration is one of five levels, not a free number. Both it and the zoom are
+// walked with a stepper, and a control with five positions cannot represent an
+// arbitrary value -- so anything else (a hand-edited file, an IPC call, a file from
+// an older schema) is snapped to the nearest level, ties going up. File, panel and
+// engine therefore always agree on which level is selected.
+var DURATION_LEVELS = [20, 30, 40, 50, 60]
+
+// The zoom's five levels. They end at 1.30 on purpose: that is the hard cap, above
+// which the copy shows its own pixels instead of the wallpaper's, and 1.15 -- the
+// default -- is one of them.
+var MAXZOOM_LEVELS = [1.10, 1.15, 1.20, 1.25, 1.30]
 
 var LIMITS = {
-  duration: { min: 5, max: 60 },
-  maxZoom: { min: 1.05, max: 1.30 },   // 1.30 is the cap: above it the copy shows its pixels
-  // How far the drift travels, as a fraction of the margin the zoom opens. The
-  // ceiling is 0.9 rather than 1.0 on purpose: at 1.0 the image edge lands
-  // exactly on the screen edge, so a sub-pixel rounding could show a hairline of
-  // whatever is underneath. 0.9 leaves ~14 px of slack at the default zoom.
-  driftLength: { min: 0, max: 0.9 }
+  duration: { min: DURATION_LEVELS[0], max: DURATION_LEVELS[DURATION_LEVELS.length - 1] },
+  maxZoom: { min: MAXZOOM_LEVELS[0], max: MAXZOOM_LEVELS[MAXZOOM_LEVELS.length - 1] }
 }
-
-// One step per slider. PanelSlider does not apply `step` itself, so the panel
-// reads these and snaps (see snapToStep).
-var STEPS = { duration: 1, maxZoom: 0.01, driftLength: 0.05 }
 
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)) }
 
-function decimalsOf(n) {
-  var text = String(n)
-  var dot = text.indexOf(".")
-  return dot < 0 ? 0 : text.length - dot - 1
+// Nearest level, ties going up -- the rule the tests pin down. Shared by both
+// level-based controls so they cannot drift apart in behaviour.
+function snapToLevel(levels, value, fallback) {
+  var n = typeof value === "number" ? value : parseFloat(value)
+  if (!isFinite(n)) return fallback
+  var best = levels[0]
+  for (var i = 1; i < levels.length; i++) {
+    if (Math.abs(levels[i] - n) <= Math.abs(best - n)) best = levels[i]
+  }
+  return best
 }
 
-// PanelSlider's mouse path does NOT apply `step` -- it only rounds when
-// `integer` is true (see valueFromX in Ui/PanelSlider.qml), so a drag otherwise
-// hands us values like 1.1456522623697918. Snap in the panel, relative to the
-// minimum so the grid lines up with the track's own ticks.
-//
-// Two float traps, both hit while writing this: 1.15 / 0.01 is 114.99999999999999
-// so a naive Math.round lands on 1.14, and 1.05 + 10 * 0.01 is
-// 1.1500000000000001 so the snapped result needs rounding too.
-function snapToStep(value, step, minimum) {
-  var n = typeof value === "number" ? value : parseFloat(value)
-  if (!isFinite(n)) return value
-  var s = typeof step === "number" ? step : parseFloat(step)
-  if (!isFinite(s) || s <= 0) return n
-  var base = isFinite(minimum) ? minimum : 0
-  var snapped = base + Math.round(Number(((n - base) / s).toFixed(6))) * s
-  return Number(snapped.toFixed(Math.max(decimalsOf(s), decimalsOf(base))))
+function levelIndexOf(levels, value, fallback) {
+  var level = snapToLevel(levels, value, fallback)
+  for (var i = 0; i < levels.length; i++) {
+    if (levels[i] === level) return i
+  }
+  return 0
 }
+
+function snapDuration(value) { return snapToLevel(DURATION_LEVELS, value, DEFAULTS.duration) }
+
+function durationLevelIndex(value) { return levelIndexOf(DURATION_LEVELS, value, DEFAULTS.duration) }
+
+// The panel calls this control SPEED while the value underneath is a loop period,
+// so the two run in opposite directions: the fastest setting is the SHORTEST
+// duration. This is the speed index -- 0 is the slowest level (the longest loop)
+// and the last is the fastest -- and it is what the slider and the +/- buttons
+// walk, so "more" always means faster and "less" always means slower, and the
+// slider's right end is the quick one.
+function speedLevelIndex(value) {
+  return DURATION_LEVELS.length - 1 - levelIndexOf(DURATION_LEVELS, value, DEFAULTS.duration)
+}
+
+function durationForSpeedIndex(index) {
+  var n = typeof index === "number" ? index : parseFloat(index)
+  if (!isFinite(n)) return DEFAULTS.duration
+  var i = clamp(Math.round(n), 0, DURATION_LEVELS.length - 1)
+  return DURATION_LEVELS[DURATION_LEVELS.length - 1 - i]
+}
+
+function snapMaxZoom(value) { return snapToLevel(MAXZOOM_LEVELS, value, DEFAULTS.maxZoom) }
+
+function maxZoomLevelIndex(value) { return levelIndexOf(MAXZOOM_LEVELS, value, DEFAULTS.maxZoom) }
 
 function number(value, min, max, fallback) {
   var n = typeof value === "number" ? value : parseFloat(value)
@@ -153,10 +177,9 @@ function sanitize(raw) {
   var input = (raw && typeof raw === "object") ? raw : {}
   return {
     enabled: bool(input.enabled, DEFAULTS.enabled),
-    duration: number(input.duration, LIMITS.duration.min, LIMITS.duration.max, DEFAULTS.duration),
-    maxZoom: number(input.maxZoom, LIMITS.maxZoom.min, LIMITS.maxZoom.max, DEFAULTS.maxZoom),
-    drift: normaliseDrift(input.drift),
-    driftLength: number(input.driftLength, LIMITS.driftLength.min, LIMITS.driftLength.max, DEFAULTS.driftLength)
+    duration: snapDuration(input.duration),
+    maxZoom: snapMaxZoom(input.maxZoom),
+    drift: normaliseDrift(input.drift)
   }
 }
 

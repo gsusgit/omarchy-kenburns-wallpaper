@@ -95,12 +95,17 @@ def boundary_estimates(pairs):
 
 
 def rates(group):
-    """(outbound, return) mean |dz| per unit of seg. Equal halves make them
-    equal; a quicker return leg makes the second one larger."""
+    """(outbound, return) mean |dz| per unit of seg. Equal halves make them equal;
+    a quicker return leg makes the second one larger.
+
+    The seam is skipped by requiring a POSITIVE step, not a large one: at the
+    slowest duration a sample advances only ~0.008 of a loop, so a fixed threshold
+    (0.02, which was right when loops were 5 s) silently measured nothing at all.
+    """
     out, back = [], []
     for a, b in zip(group, group[1:]):
         dseg = b["seg"] - a["seg"]
-        if dseg > 0.02:                      # ignores the seam, where seg wraps
+        if dseg > 0:
             (out if a["seg"] < 0.5 else back).append(abs(b["z"] - a["z"]) / dseg)
     mean = lambda xs: (sum(xs) / len(xs)) if xs else 0.0
     return mean(out), mean(back)
@@ -144,13 +149,23 @@ if MODE == "loop":
     # No change of pace: the outbound and return halves run at the same mean
     # rate. This is the regression test for the 3/4-1/4 split, whose return leg
     # was 3x quicker and read as a jump at the end of the move.
+    #
+    # `measured` guards against a vacuous pass: with no samples in a half, the
+    # ratio would default to zero and the check would "pass" without comparing
+    # anything -- which is what it silently did once the loops got longer.
+    measured = 0
     worst = 0.0
     for cy, group in complete:
         out_rate, back_rate = rates(group)
         if out_rate > 1e-9 and back_rate > 1e-9:
+            measured += 1
             worst = max(worst, back_rate / out_rate)
-    check(worst < 1.25, "both halves of the loop run at the same pace",
-          "worst return/outbound rate ratio = %.2f (3/4-1/4 split was ~3.0)" % worst)
+    if measured:
+        check(worst < 1.25, "both halves of the loop run at the same pace",
+              "worst return/outbound rate ratio = %.2f over %d loops (3/4-1/4 split was ~3.0)"
+              % (worst, measured))
+    else:
+        bad("a loop with samples in both halves, to compare their pace")
 
     # One turnaround at each end, not a wobble: the zoom is monotonic within
     # each half of the loop.
@@ -237,7 +252,7 @@ elif MODE == "ease":
         slopes = []
         for a, b in zip(group, group[1:]):
             dseg = b["seg"] - a["seg"]
-            if dseg > 0.02:
+            if dseg > 0:                    # positive step: skips the seam only
                 slopes.append(abs(b["z"] - a["z"]) / dseg)
         slopes = [s for s in slopes if s > 1e-9]
         if len(slopes) < 4:
@@ -258,7 +273,7 @@ elif MODE == "ease":
             mid, edge = [], []
             for a, b in zip(group, group[1:]):
                 dseg = b["seg"] - a["seg"]
-                if dseg <= 0.02:
+                if dseg <= 0:
                     continue
                 v = abs(b["z"] - a["z"]) / dseg
                 half = a["seg"] % 0.5

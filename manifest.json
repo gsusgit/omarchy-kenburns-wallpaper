@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "gsus.animated-wallpaper",
   "name": "Animated Wallpaper",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "author": "gsus",
   "description": "A wallpaper that is faintly alive: the image itself drifts, very slowly. Nothing is painted on top of it.",
   "kinds": ["service", "bar-widget"],

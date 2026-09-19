@@ -19,30 +19,34 @@ ever choose the pose you happen to start on — invisible within seconds of a lo
 was built, lived with, and removed. The loop always runs 1 → `maxZoom` → 1.
 
 **The drift is the move's other axis**, and it is deliberately independent of the zoom: any zoom can
-creep any way. `drift` is one of the eight compass points or `center` (no drift at all), and
-`driftLength` is how far it travels, as a fraction of the margin the zoom opens. Because the offset
-rides on that margin rather than on absolute pixels, the image can never be pulled inside the window —
-no combination of zoom, drift and length can show a black edge. It is also self-scaling: at zoom 1
-there is no drift at all, and a small `maxZoom` simply means a shorter journey.
+creep any way. `drift` is one of the eight compass points or `center` (no drift at all). Its length is
+**fixed at 0.9 of the margin** the zoom opens: a slider for it was tried and removed, because the
+visible difference between 30 % and 60 % is small next to the zoom it rides on and the ceiling is what
+you want anyway. Because the offset rides on that margin rather than on absolute pixels, the image can
+never be pulled inside the window — no combination of zoom and drift can show a black edge. It is also
+self-scaling: at zoom 1 there is no drift at all, and a small `maxZoom` simply means a shorter journey.
 
 | Parameter | Default | Range | Meaning |
 |---|---|---|---|
 | `enabled` | `true` | — | freezes the clock; the wallpaper stays painted |
-| `duration` | `20.0` s | 5–60 | one whole loop, out and back |
-| `maxZoom` | `1.15` | 1.05–**1.30** | how far it zooms; the 1.30 cap is hard, above it the copy shows its pixels |
+| `duration` | `20` s | **one of five levels**: 20, 30, 40, 50, 60 | one whole loop, out and back |
+| `maxZoom` | `1.15` | **one of five levels**: 1.10, 1.15, 1.20, 1.25, 1.30 | how far it zooms; the 1.30 cap is hard, above it the copy shows its pixels |
 | `drift` | `center` | center, left, right, up, down, and the four diagonals | which way the image creeps while the zoom opens |
-| `driftLength` | `0.5` | 0–**0.9** | how far it drifts, as a fraction of the margin; the 0.9 ceiling leaves ~14 px of slack so a hairline can never show |
 
 That is the entire schema. Everything else the plugin used to expose was removed after living with
 it — see the History table for what and why.
 
+`duration` and `maxZoom` are levels rather than numbers because the panel walks both with a stepper,
+and a stepper cannot represent an arbitrary value: anything else (a hand-edited file, an IPC call, a
+file from an older schema) is **snapped to the nearest level, ties going up**, so the file, the panel
+and the engine always agree on which level is selected.
+
 Measured at the defaults on a 1920x1080 desktop: the image edge moves at a **median 16 px/s, peaking
 at 22.6 px/s** (the measured peak matches the analytic `maxZoom`·π/`duration` exactly), and the zoom
-sweeps the full **1.0000 → 1.1500**, i.e. 144 px of edge travel. The drift adds up to **72 px** of
-travel at the default `driftLength` of 0.5, or 130 px at the 0.9 ceiling, along whichever axis (or
-diagonal) it is pointed at. **Speed is what makes motion visible, not size**: the first version moved
-2 % over 90 s, which is 0.7 px/s at the edge, and no eye catches it. Raising `duration` is the calm
-knob.
+sweeps the full **1.0000 → 1.1500**, i.e. 144 px of edge travel. The drift adds **130 px** of travel
+(0.9 of the margin) along whichever axis — or diagonal — it is pointed at. **Speed is what makes motion
+visible, not size**: the first version moved 2 % over 90 s, which is 0.7 px/s at the edge, and no eye
+catches it. Raising `duration` is the calm knob.
 
 `omarchy-shell` costs **5.9 %** of one core with the plugin on and **3.9 %** off — about **+2 %** at
 ~14 fps, no blur and no per-frame shader change. The whole feature adds no timers: one clock drives
@@ -112,24 +116,22 @@ The file is created with the defaults on first run, so there is nothing to set u
   "enabled": true,
   "duration": 20,
   "maxZoom": 1.15,
-  "drift": "center",
-  "driftLength": 0.5
+  "drift": "center"
 }
 ```
 
 `Settings.js` is the only place defaults, limits and validation live, shared by `Service.qml` (which
 applies them) and `Menu.qml` (which edits them). Everything is clamped and whitelisted on read, so a
 hand-edited or corrupted file can never break the renderer: unknown keys are dropped (including keys
-from an older schema), `maxZoom` stops at 1.30, an unknown `drift` falls back to `center`, and
-unparseable text becomes the defaults.
+from an older schema), `maxZoom` stops at 1.30, a `duration` snaps to the nearest of its five levels,
+an unknown `drift` falls back to `center`, and unparseable text becomes the defaults.
 
 The same values are reachable from a terminal — which is also how persistence is tested:
 
 ```bash
 qs ipc call animated-wallpaper status                  # the live config as JSON
-qs ipc call animated-wallpaper setDuration 45
+qs ipc call animated-wallpaper setDuration 50               # snapped to the nearest level
 qs ipc call animated-wallpaper setDrift upLeft            # "up-left" and "Up Left" work too
-qs ipc call animated-wallpaper setDriftLength 0.8         # clamped to 0.9 on write
 qs ipc call animated-wallpaper setMaxZoom 9            # clamped to 1.30 on write
 qs ipc call animated-wallpaper reset
 ```
@@ -179,10 +181,22 @@ because it is a transport control rather than a motion setting), then two sectio
 
 | Section | Row | Control |
 |---|---|---|
-| ZOOM | — | slider, 1.05–1.30×. No row label: the section header names it and it is the only control there |
-| DURATION | Amount | slider, 5–60 seconds (one whole loop) |
-| DIRECTIONS | Drift | a 3×3 diana of nine chips: the eight compass points plus the centre dot |
-| DIRECTIONS | Length | slider, 0–90 % of the margin the zoom opens |
+| ZOOM | — | a five-level stepper: `[−] slider [+]` over 1.10× to 1.30×, with five notches on the track |
+| SPEED | — | the same stepper over five loop lengths, 60 s down to 20 s |
+| DIRECTION | — | a 3×3 diana of nine chips: the eight compass points plus the centre dot, left-aligned, with no label of its own |
+
+Both steppers are **five levels driven by a level index**, and neither shows a number: the notches on
+the track are what say how many levels there are and which one you are on, and they move as you press.
+The buttons disable themselves at the two ends and carry short tooltips ("Faster", "Less zoom"). Because
+the slider is driven by the index rather than by the value, `PanelSlider`'s own integer rounding does
+the snapping and a drag can never land between levels — which is also why there is no fractional
+`snapToStep` helper any more (it existed to fix up a slider whose `step` the kit ignores).
+
+**SPEED walks its levels backwards on purpose.** The value underneath is a loop period, so the fastest
+setting is the shortest duration: the speed index runs 0 (slowest, 60 s) to 4 (fastest, 20 s), and the
+slider's right end is the quick one. Writing the period from a speed index is what keeps the button and
+the value from contradicting each other — the first version had a "Slower" button that actually
+shortened the loop.
 
 The diana is a `Grid` of the kit's own `Button` rather than a `ButtonGroup` (which is a `Row` and
 cannot do 3×3). Using the kit's chip is what makes it cheap *and* consistent: it inherits the theme's
@@ -208,8 +222,8 @@ Rows for new controls go in the `Column` in `Menu.qml`; each one edits the draft
 ## Tests
 
 ```bash
-./tests/settings.test.sh    # 61 cases, seconds    -- the sanitiser, in node
-./tests/pose.test.sh        # 35 cases, ~1.5 min   -- the motion, from the plugin's own trace
+./tests/settings.test.sh    # 79 cases, seconds    -- the sanitiser, in node
+./tests/pose.test.sh        # 27 cases, ~3 min     -- the motion, from the plugin's own trace
 ./tests/persist.test.sh     # 22 cases, ~70 s      -- write -> disk -> reload -> survives restart
 ```
 
@@ -299,3 +313,4 @@ Two more traps this plugin walked into, both worth knowing before adding a widge
 | **3.0** | **the small version: four values, one cosine, nothing else.** `preset` (a shortcut through the other values, not an effect of its own), `handheld` (a ~50 px wobble on a 40 s traverse read as the wallpaper vibrating rather than as a hand), `breathing` (its "off" state is a hard snap back, its "on" state left the direction switch looking inert) and `smoothEasing` (ease-in-out is simply the better default) are all gone. The loop became symmetric because the 3/4–1/4 split's quicker return read as a jump at the end; the pan layer went with the shake |
 | **3.1** | **the drift comes back as an axis of its own** — independent of the zoom, so any zoom can creep any way: a 3×3 diana of nine directions (the four straight, the four diagonals, the centre) plus a `driftLength` slider. Straight-only was built first and rejected for leaving out the diagonals; an angle in degrees and a pair of X/Y ranges were rejected too, because both spend a slider on something one click can say, and degrees needs a second slider for magnitude anyway |
 | **3.2** | **`direction` is gone**, because with a symmetric loop "in" and "out" are the same oscillation half a period apart — it could only pick the starting pose. The ZOOM section lost its row label too: the header names it and the slider is the only control there. The test suites now save and restore the settings file instead of leaving their own defaults behind |
+| **3.3** | **both controls become five levels walked with `−`/`+` and a slider that jumps between them**: the duration (20/30/40/50/60) and the zoom (1.10–1.30). The schema snaps to a level, because a stepper cannot represent an arbitrary value, and the duration section is called **SPEED** — which is why its index runs backwards against the loop period: "less" is slower. The drift's **length slider goes**, fixed at the 0.9 ceiling, and DIRECTIONS becomes **DIRECTION**, losing its row label and its length row: header, diana, nothing else, flush left |

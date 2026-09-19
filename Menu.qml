@@ -38,6 +38,14 @@ Panel {
   property var draft: Settings.sanitize({})
   property bool dirty: false
 
+  // Which level each level-based control is on. The steppers' buttons and their
+  // sliders both read these, so neither can disagree with the value applied.
+  //
+  // The zoom index runs low-to-high (1.10 to 1.30); the speed index is inverted
+  // against the loop period it writes, because a short loop is the fast one.
+  readonly property int zoomIndex: Settings.maxZoomLevelIndex(root.draft.maxZoom)
+  readonly property int speedIndex: Settings.speedLevelIndex(root.draft.duration)
+
   // Compare canonically: two configs that differ only in key order or in a
   // numeric type are the same settings, and should not light up "unsaved".
   function matchesApplied() {
@@ -187,19 +195,44 @@ Panel {
           fontFamily: root.fontFamily
         }
 
-        // The section header names the value, and it is the only control here, so
-        // it needs no row label of its own.
-        PanelSlider {
+        // Five levels, walked with two buttons and drawn as five notches on the
+        // slider between them. The slider is driven by the LEVEL INDEX rather than
+        // by the zoom factor, so PanelSlider's own integer rounding does the
+        // snapping and a drag can never land between levels.
+        Row {
           width: parent.width
-          bar: root.bar
-          minimum: Settings.LIMITS.maxZoom.min
-          maximum: Settings.LIMITS.maxZoom.max
-          step: Settings.STEPS.maxZoom
-          value: root.draft.maxZoom
-          // PanelSlider never applies `step` on the mouse path, so snap here;
-          // see snapToStep for why a raw drag value cannot be trusted.
-          onMoved: function(v) {
-            root.edit("maxZoom", Settings.snapToStep(v, Settings.STEPS.maxZoom, Settings.LIMITS.maxZoom.min))
+          spacing: Style.spacing.sm
+
+          PanelActionButton {
+            id: zoomDownBtn
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "\uf068"                       // Font Awesome minus
+            tooltipText: "Less zoom"
+            foreground: root.barForeground
+            enabled: root.zoomIndex > 0
+            onClicked: root.edit("maxZoom", Settings.MAXZOOM_LEVELS[root.zoomIndex - 1])
+          }
+
+          PanelSlider {
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - zoomDownBtn.width - zoomUpBtn.width - parent.spacing * 2
+            bar: root.bar
+            minimum: 0
+            maximum: Settings.MAXZOOM_LEVELS.length - 1
+            integer: true
+            tickCount: Settings.MAXZOOM_LEVELS.length
+            value: root.zoomIndex
+            onMoved: function(i) { root.edit("maxZoom", Settings.MAXZOOM_LEVELS[Math.round(i)]) }
+          }
+
+          PanelActionButton {
+            id: zoomUpBtn
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "\uf067"                       // Font Awesome plus
+            tooltipText: "More zoom"
+            foreground: root.barForeground
+            enabled: root.zoomIndex < Settings.MAXZOOM_LEVELS.length - 1
+            onClicked: root.edit("maxZoom", Settings.MAXZOOM_LEVELS[root.zoomIndex + 1])
           }
         }
 
@@ -208,31 +241,55 @@ Panel {
         // --------------------------------------------------------- duration
         PanelSectionHeader {
           width: parent.width
-          text: "DURATION"
+          text: "SPEED"
           foreground: root.barForeground
           fontFamily: root.fontFamily
         }
 
-        Text {
+        // The same five-level stepper as the zoom: two buttons with the slider
+        // between them, and no number anywhere. The notches on the track are what
+        // show how many levels there are and which one you are on, and they move
+        // as you press.
+        //
+        // Everything here walks the SPEED index, which runs opposite to the loop
+        // period: "less" is slower (a longer loop) and the slider's right end is the
+        // quick one. Writing the period from a speed index is what keeps the two
+        // from contradicting each other -- the first version had a "Slower" button
+        // that actually shortened the loop.
+        Row {
           width: parent.width
-          // One loop, not one traverse: the main leg is three quarters of this
-          // and the return takes the rest.
-          text: "Amount  " + Math.round(root.draft.duration) + " seconds"
-          color: root.barForeground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-        }
+          spacing: Style.spacing.sm
 
-        PanelSlider {
-          width: parent.width
-          bar: root.bar
-          minimum: Settings.LIMITS.duration.min
-          maximum: Settings.LIMITS.duration.max
-          step: Settings.STEPS.duration
-          integer: true
-          value: root.draft.duration
-          onMoved: function(v) {
-            root.edit("duration", Settings.snapToStep(v, Settings.STEPS.duration, Settings.LIMITS.duration.min))
+          PanelActionButton {
+            id: slowerBtn
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "\uf068"                       // Font Awesome minus
+            tooltipText: "Slower"
+            foreground: root.barForeground
+            enabled: root.speedIndex > 0
+            onClicked: root.edit("duration", Settings.durationForSpeedIndex(root.speedIndex - 1))
+          }
+
+          PanelSlider {
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - slowerBtn.width - fasterBtn.width - parent.spacing * 2
+            bar: root.bar
+            minimum: 0
+            maximum: Settings.DURATION_LEVELS.length - 1
+            integer: true
+            tickCount: Settings.DURATION_LEVELS.length
+            value: root.speedIndex
+            onMoved: function(i) { root.edit("duration", Settings.durationForSpeedIndex(i)) }
+          }
+
+          PanelActionButton {
+            id: fasterBtn
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "\uf067"                       // Font Awesome plus
+            tooltipText: "Faster"
+            foreground: root.barForeground
+            enabled: root.speedIndex < Settings.DURATION_LEVELS.length - 1
+            onClicked: root.edit("duration", Settings.durationForSpeedIndex(root.speedIndex + 1))
           }
         }
 
@@ -241,75 +298,43 @@ Panel {
         // -------------------------------------------------------- directions
         PanelSectionHeader {
           width: parent.width
-          text: "DIRECTIONS"
+          text: "DIRECTION"
           foreground: root.barForeground
           fontFamily: root.fontFamily
         }
 
-        Text {
-          width: parent.width
-          text: "Drift"
-          color: root.barForeground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-        }
-
         // A 3x3 diana: the eight compass points plus the centre, so a diagonal is
         // one click -- no angle to convert and no pair of axis values to reason
-        // about. ButtonGroup is a Row, so this is a Grid of the same chips;
-        // Button already brings focus and Enter/Space, and it centres its own
-        // content, which is why a chip wider than its glyph still reads as a
-        // button rather than as a left-aligned label.
-        Item {
-          width: parent.width
-          height: driftGrid.height
+        // about. No row label above it and no length slider below it: the section
+        // header and the glyphs say everything, and the length is fixed at the
+        // ceiling (see Service.qml). Left-aligned, flush with the panel's own
+        // content, which is where a 3x3 block of chips belongs.
+        //
+        // ButtonGroup is a Row and cannot do 3x3, so this is a Grid of the same
+        // chips; Button brings focus, tooltips and Enter/Space, and centres its own
+        // content, so a chip wider than its glyph still reads as a button.
+        Grid {
+          id: driftGrid
+          columns: 3
+          spacing: Style.spacing.sm
 
-          Grid {
-            id: driftGrid
-            anchors.horizontalCenter: parent.horizontalCenter
-            columns: 3
-            spacing: Style.spacing.sm
+          Repeater {
+            model: Settings.driftOptions()
 
-            Repeater {
-              model: Settings.driftOptions()
-
-              delegate: Button {
-                required property var modelData
-                width: Style.spacing.controlHeight * 1.5
-                height: Style.spacing.controlHeight
-                text: modelData.label
-                tooltipText: modelData.tooltip
-                selected: root.draft.drift === modelData.value
-                bordered: true
-                foreground: root.barForeground
-                accent: Color.accent
-                background: "transparent"
-                fontFamily: root.fontFamily
-                onClicked: root.edit("drift", modelData.value)
-              }
+            delegate: Button {
+              required property var modelData
+              width: Style.spacing.controlHeight * 1.5
+              height: Style.spacing.controlHeight
+              text: modelData.label
+              tooltipText: modelData.tooltip
+              selected: root.draft.drift === modelData.value
+              bordered: true
+              foreground: root.barForeground
+              accent: Color.accent
+              background: "transparent"
+              fontFamily: root.fontFamily
+              onClicked: root.edit("drift", modelData.value)
             }
-          }
-        }
-
-        Text {
-          width: parent.width
-          // As a fraction of the margin the zoom opens, so the number means the
-          // same thing whatever the zoom is set to.
-          text: "Length  " + Math.round(root.draft.driftLength * 100) + "%"
-          color: root.barForeground
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-        }
-
-        PanelSlider {
-          width: parent.width
-          bar: root.bar
-          minimum: Settings.LIMITS.driftLength.min
-          maximum: Settings.LIMITS.driftLength.max
-          step: Settings.STEPS.driftLength
-          value: root.draft.driftLength
-          onMoved: function(v) {
-            root.edit("driftLength", Settings.snapToStep(v, Settings.STEPS.driftLength, Settings.LIMITS.driftLength.min))
           }
         }
 
