@@ -32,18 +32,25 @@ Item {
   property var manifest: null
 
   // ------------------------------------------------------------ taste dial
-  // 0.02 = the "2%" setting: the image zooms 1.000 -> 1.020, wanders +-8 px,
-  // and the exposure darkens by up to 2%. Raise to 0.05 for unmistakable,
-  // drop to 0.01 to have to hunt for it.
-  readonly property real motion: 0.02
+  // `motion` is the zoom/pan dial: the image breathes 1.000 <-> 1.070 every
+  // 34 s, which moves the image edge at up to ~4 px/s -- the point where you
+  // can see it moving when you look at it, without it reading as a screensaver.
+  //  0.03 barely alive | 0.07 shipped | 0.12 obvious
+  // Speed matters more than size: 2% over 90 s is 0.7 px/s and no eye catches
+  // that, which is why this used to be invisible.
+  readonly property real motion: 0.07
   readonly property int frameMs: 70            // repaint interval (~14 fps)
-  readonly property int scalePeriodMs: 90000   // one in-and-out zoom
-  readonly property int panPeriodMs: 140000    // one pan orbit
-  readonly property int exposurePeriodMs: 25000
-  readonly property int bloomPeriodMs: 11000
-  readonly property real bloomIntensity: 0.10
-  readonly property int moteCount: 18
-  readonly property real moteAlpha: 0.05
+  readonly property int scalePeriodMs: 34000   // one in-and-out zoom
+  readonly property int panPeriodMs: 47000     // one pan orbit
+  readonly property real panAmount: 0.65       // fraction of the zoom slack the pan uses
+  readonly property real exposureDepth: 0.025  // room-light breath
+  readonly property int exposurePeriodMs: 22000
+  readonly property real bloomIntensity: 0.14
+  readonly property int bloomPeriodMs: 9000
+  readonly property real moteAlpha: 0.08
+  readonly property int moteCount: 26
+  readonly property real glintOpacity: 0.07    // travelling light band
+  readonly property int glintPeriodMs: 42000
   readonly property int revealMs: 420          // Omarchy's own reveal duration
 
   readonly property string home: Quickshell.env("HOME")
@@ -56,11 +63,28 @@ Item {
     return 0.5 - 0.5 * Math.cos(2 * Math.PI * (root.clock % periodMs) / periodMs)
   }
 
+  function orbit(periodMs, phase) {
+    return Math.sin(2 * Math.PI * ((root.clock % periodMs) / periodMs) + (phase || 0))
+  }
+
   readonly property real zoom: 1 + motion * root.wave(scalePeriodMs)
-  readonly property real panX: 400 * motion * (2 * root.wave(panPeriodMs) - 1)
-  readonly property real panY: 300 * motion * (2 * root.wave(panPeriodMs * 0.7) - 1)
-  readonly property real exposure: motion * root.wave(exposurePeriodMs)
+
+  // The pan is a fraction of the slack the zoom creates, so the image always
+  // covers the screen: no pan at all while the zoom is at its minimum, which
+  // is what keeps a black edge from ever showing up.
+  readonly property real panUnitX: panAmount * root.orbit(panPeriodMs, 0)
+  readonly property real panUnitY: panAmount * root.orbit(panPeriodMs * 0.8, 1.6)
+
+  readonly property real exposure: exposureDepth * root.wave(exposurePeriodMs)
   readonly property real bloom: bloomIntensity * root.wave(bloomPeriodMs)
+
+  // The haze wanders (and keeps a second, slower orbit) so the light moves
+  // around the screen instead of pulsing in place.
+  readonly property real bloomX: 0.5 + 0.13 * root.orbit(61000, 0)
+  readonly property real bloomY: 0.5 + 0.09 * root.orbit(79000, 2.1)
+
+  readonly property real glintSweep: (clock % glintPeriodMs) / glintPeriodMs
+  readonly property real glint: glintOpacity * Math.sin(Math.PI * glintSweep)
 
   property real clock: 0
   Timer {
@@ -165,8 +189,9 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    console.log("[animated-wallpaper] ready: screens=" + Quickshell.screens.length
-      + " motion=" + root.motion + " accent=" + root.accent)
+    console.log("[animated-wallpaper] ready v0.3: screens=" + Quickshell.screens.length
+      + " motion=" + root.motion + " scalePeriodMs=" + root.scalePeriodMs
+      + " accent=" + root.accent)
   }
 
   Variants {
@@ -200,8 +225,8 @@ Item {
       // read as a zoom.
       Item {
         id: panLayer
-        x: root.panX
-        y: root.panY
+        x: root.panUnitX * (root.zoom - 1) / 2 * win.width
+        y: root.panUnitY * (root.zoom - 1) / 2 * win.height
         width: win.width
         height: win.height
 
@@ -286,14 +311,14 @@ Item {
       }
 
       // --------------------------------------------------- ambient light
-      // Bloom: a soft accent-tinted haze that breathes. Deliberately steady --
-      // with the wallpaper itself drifting, a moving haze on top would be one
-      // moving thing too many.
+      // Bloom: a soft accent-tinted haze that breathes *and wanders*, so the
+      // light in the room moves rather than pulsing in place.
       Item {
         id: bloom
         width: win.width * 1.3
         height: width
-        anchors.centerIn: parent
+        x: win.width * root.bloomX - width / 2
+        y: win.height * root.bloomY - height / 2
         opacity: root.bloom
 
         Image {
@@ -312,6 +337,23 @@ Item {
         }
       }
 
+      // Glint: a wide, faint band of accent light crossing the screen every
+      // 42 s. Faded in and out by sin(), so it never pops at the edges.
+      Rectangle {
+        id: glint
+        width: win.width * 0.5
+        height: win.height
+        x: -width + (win.width + width) * root.glintSweep
+        opacity: root.glint
+        visible: opacity > 0.002
+        gradient: Gradient {
+          orientation: Gradient.Horizontal
+          GradientStop { position: 0.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.0) }
+          GradientStop { position: 0.5; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 1.0) }
+          GradientStop { position: 1.0; color: Qt.rgba(root.accent.r, root.accent.g, root.accent.b, 0.0) }
+        }
+      }
+
       // Motes: dust in the light. Positions come from the same clock -- no
       // particle system, because Qt's particle system drives its own frame
       // ticker and would cost several times the repaints.
@@ -323,9 +365,9 @@ Item {
           required property int index
 
           readonly property real seed: (index * 0.6180339887) % 1
-          readonly property real period: 55000 + seed * 45000
+          readonly property real period: 40000 + seed * 40000
           readonly property real t: ((root.clock + seed * 90000) % period) / period
-          readonly property real size: (70 + seed * 150) * (win.width / 1920)
+          readonly property real size: (60 + seed * 120) * (win.width / 1920)
 
           width: size
           height: size
@@ -341,8 +383,8 @@ Item {
         }
       }
 
-      // Exposure: the whole picture darkens by up to `motion` and comes back,
-      // like the light in the room changing. Topmost, so it grades everything.
+      // Exposure: the whole picture darkens a little and comes back, like the
+      // light in the room changing. Topmost, so it grades everything.
       Rectangle {
         anchors.fill: parent
         color: "black"
