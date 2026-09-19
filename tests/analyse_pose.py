@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assertions over the plugin's own pose trace (v3.0 engine).
 
-Reads "[animated-wallpaper] pose {...}" lines on stdin (see tests/pose.test.sh)
+Reads "[kenburnswallpaper] pose {...}" lines on stdin (see tests/pose.test.sh)
 and checks the behaviour each scenario asks for. Prints PASS/FAIL per assertion
 and exits with the number of failures.
 

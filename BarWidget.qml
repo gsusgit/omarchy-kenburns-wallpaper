@@ -2,16 +2,16 @@ import QtQuick
 import Quickshell
 import qs.Ui
 
-// Bar entry point for the animated wallpaper.
+// Bar entry point for Ken Burns Wallpaper.
 //
-// The manifest points at this file; the small menu lives in Panel.qml and is
+// The manifest points at this file; the small menu lives in Menu.qml and is
 // loaded lazily below, exactly as Omarchy's own clock plugin does it (see
-// https://plugins.omarchy.org/develop.html). This file owns the bar button and
+// https://omarchyplugins.com/develop). This file owns the bar button and
 // forwards the panel lifecycle so clicks, the shell commands
 // (`omarchy-shell shell summon <id>`) and popout switching all reach the panel.
 BarWidget {
   id: root
-  moduleName: "gsus.animated-wallpaper"
+  moduleName: "io.github.gsusgit.kenburnswallpaper"
 
   // The plugin is also a service (kind "service"); the shell keeps one instance
   // of it and the widget reads its live state from here.
@@ -64,12 +64,17 @@ BarWidget {
     }
   }
 
-  WidgetButton {
+  BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: "\uf03e"                    // picture glyph (Font Awesome range)
-    tooltipText: root.animating ? "Animated wallpaper — animating" : "Animated wallpaper — paused"
+    tooltipText: root.animating ? "Ken Burns - ON" : "Ken Burns - OFF"
+    iconComponent: Component {
+      ApertureIcon {
+        anchors.fill: parent
+        color: button.foreground
+      }
+    }
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
     }

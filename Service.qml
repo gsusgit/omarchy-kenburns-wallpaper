@@ -7,7 +7,7 @@ import QtQuick.Shapes
 import qs.Commons
 import "Settings.js" as Settings
 
-// Animated wallpaper.
+// Ken Burns Wallpaper.
 //
 // The wallpaper is painted by *us* (see the PanelWindow below) instead of by
 // Omarchy's own background plugin, because that is the only way the image
@@ -30,7 +30,6 @@ Item {
 
   // Injected by the shell host.
   property var shell: null
-  property string omarchyPath: ""
   property var manifest: null
 
   // ---------------------------------------------------------- internal dials
@@ -43,14 +42,12 @@ Item {
   readonly property int traceMs: 150           // pose trace interval (tests read it)
   readonly property int traceWindowMs: 90000   // trace is bounded: no line-per-second forever
 
-  readonly property string pluginId: manifest && manifest.id ? String(manifest.id) : "gsus.animated-wallpaper"
-  readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/" + pluginId
-  // NOT inside pluginDir: the shell watches a plugin's whole directory for
-  // changes and reloads it, so a settings file written there reloads the plugin
-  // on every save (4 reloads per write, measured) -- which unmaps and remaps the
-  // bar panel mid-interaction. Omarchy's own stateful plugins keep their config
-  // outside too (omarchy-lock-style -> ~/.config/omarchy/lock-style.json).
-  readonly property string settingsPath: Quickshell.env("HOME") + "/.config/omarchy/animated-wallpaper.json"
+  // NOT inside the plugin directory: the shell watches a plugin's whole folder
+  // for changes and reloads it, so a settings file written there reloads the
+  // plugin on every save (4 reloads per write, measured) -- which unmaps and
+  // remaps the bar panel mid-interaction. Omarchy's own stateful plugins keep
+  // their config outside too (omarchy-lock-style -> ~/.config/omarchy/lock-style.json).
+  readonly property string settingsPath: Quickshell.env("HOME") + "/.config/omarchy/kenburnswallpaper.json"
 
   // ------------------------------------------------------- user configuration
   // The settings file is the single source of truth; Settings.js clamps
@@ -62,7 +59,7 @@ Item {
     var parsed = Settings.parse(rawText)
     root.config = parsed
     root.enabled = parsed.enabled
-    console.log("[animated-wallpaper] config: " + JSON.stringify(parsed))
+    console.log("[kenburnswallpaper] config: " + JSON.stringify(parsed))
     root.startTrace()
   }
 
@@ -90,13 +87,8 @@ Item {
       'umask 077; tmp="$1.tmp.$$"; trap \'rm -f "$tmp"\' EXIT; printf \'%s\\n\' "$2" > "$tmp" && mv -f "$tmp" "$1"',
       "sh", root.settingsPath, root.pendingWrite]
     onExited: function(code) {
-      if (code !== 0) {
-        console.warn("[animated-wallpaper] settings write failed, exit " + code)
-      } else {
-        // Say what was written, on one line: the config is pretty-printed, and the
-        // journal keeps only the first line of a multi-line entry.
-        console.log("[animated-wallpaper] settings written: " + root.pendingWrite.replace(/\s+/g, " "))
-      }
+      if (code !== 0)
+        console.warn("[kenburnswallpaper] settings write failed, exit " + code)
     }
   }
 
@@ -117,7 +109,7 @@ Item {
   // assertions in tests/persist.test.sh drive a real write + reload round trip.
   //
   // One function per key rather than a generic set(key, value): the CLI reads
-  // better (`qs ipc call animated-wallpaper setSpeed 50`) and a typo in the
+  // better (`qs ipc call kenburnswallpaper setSpeed 50`) and a typo in the
   // key cannot reach the config. Note when linting: use /usr/lib/qt6/bin/qmllint
   // -- the /usr/bin/qmllint on this box is Qt5's (5.15) and crashes silently
   // (exit 255, no message) on Quickshell's Qt6 types. Run it as
@@ -133,11 +125,10 @@ Item {
     else if (value !== "" && !isNaN(Number(value))) v = Number(value)
     root.set(key, v)
     root.save()
-    console.log("[animated-wallpaper] ipc " + key + "=" + v)
   }
 
   IpcHandler {
-    target: "animated-wallpaper"
+    target: "kenburnswallpaper"
 
     function setEnabled(value: string): void { root.applyIpc("enabled", value) }
     function setSpeed(value: string): void { root.applyIpc("speed", value) }
@@ -147,7 +138,6 @@ Item {
     function reset(): void {
       root.config = Settings.sanitize({})
       root.save()
-      console.log("[animated-wallpaper] ipc reset")
     }
 
     function status(): string {
@@ -172,7 +162,7 @@ Item {
       // First run (no file yet) and unreadable files land here. Fall back to the
       // defaults AND write them out, so the file exists for the next boot and a
       // hand-edited file can always be inspected to see the canonical shape.
-      console.warn("[animated-wallpaper] " + root.settingsPath + " unreadable, using defaults: " + error)
+      console.warn("[kenburnswallpaper] " + root.settingsPath + " unreadable, using defaults: " + error)
       root.applyConfig("")
       root.save()
     }
@@ -205,7 +195,7 @@ Item {
     // (0..1), `z` is the scale factor (1.0 up to maxZoom), and `x`/`y` are the pan
     // as a fraction of the margin the zoom opens. Reading `t` as seconds gives
     // silently zero speeds -- a measurement of mine went wrong exactly that way.
-    onTriggered: console.log("[animated-wallpaper] pose " + JSON.stringify({
+    onTriggered: console.log("[kenburnswallpaper] pose " + JSON.stringify({
       t: Math.round(root.clock),
       cy: root.loopIndex,
       seg: Number(root.segment.toFixed(4)),
@@ -350,7 +340,7 @@ Item {
     repeat: false
     onTriggered: {
       if (root.incomingPath === "") return
-      console.warn("[animated-wallpaper] incoming image never became ready; swapping anyway")
+      console.warn("[kenburnswallpaper] incoming image never became ready; swapping anyway")
       root.finishReveal()
     }
   }
@@ -373,7 +363,7 @@ Item {
     id: watcher
     command: ["inotifywait", "-m", "-q", "-e", "create,moved_to,close_write,delete", root.stateDir]
     stdout: SplitParser { onRead: function(line) { root.refresh() } }
-    onExited: console.warn("[animated-wallpaper] inotifywait exited; relying on the 5 s poll")
+    onExited: console.warn("[kenburnswallpaper] inotifywait exited; relying on the 5 s poll")
   }
 
   Timer {
@@ -386,12 +376,8 @@ Item {
   Component.onCompleted: {
     refresh()
     watcher.running = true
-    // No config in this line on purpose: the FileView has not read the file yet at
-    // this point, so it would print the DEFAULTS and read as if the plugin had reset
-    // itself -- which is exactly how it read while chasing a settings file that had
-    // genuinely been overwritten. The real config is logged by applyConfig a moment
-    // later as "config: {...}"; that is the line to trust.
-    console.log("[animated-wallpaper] ready v3.0: screens=" + Quickshell.screens.length)
+    // Do not log config here: FileView has not read the file yet, so it would
+    // print the defaults. applyConfig logs the real file a moment later.
   }
 
   Variants {
@@ -411,7 +397,7 @@ Item {
       // Never reserve space or push windows around.
       exclusionMode: ExclusionMode.Ignore
 
-      WlrLayershell.namespace: "gsus-animated-wallpaper"
+      WlrLayershell.namespace: "kenburnswallpaper"
       // The stock wallpaper is on the *background* layer; the inter-layer order
       // (background < bottom < top < overlay) puts this above the wallpaper and
       // below every window and the bar.

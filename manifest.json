@@ -1,17 +1,18 @@
 {
   "schemaVersion": 1,
-  "id": "gsus.animated-wallpaper",
-  "name": "Animated Wallpaper",
-  "version": "3.4.0",
-  "author": "gsus",
-  "description": "A wallpaper that is faintly alive: the image itself drifts, very slowly. Nothing is painted on top of it.",
+  "id": "io.github.gsusgit.kenburnswallpaper",
+  "name": "Ken Burns Wallpaper",
+  "version": "4.0.0",
+  "author": "gsusgit",
+  "license": "MIT",
+  "description": "A Ken Burns loop on the current Omarchy wallpaper: the image itself zooms and drifts, very slowly. Nothing is painted on top of it.",
   "kinds": ["service", "bar-widget"],
   "entryPoints": {
     "service": "Service.qml",
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Animated wallpaper",
+    "displayName": "Ken Burns Wallpaper",
     "description": "A bar button with a settings panel: switch the animation on or off, and set the speed, the zoom, and which way the image drifts.",
     "category": "Appearance",
     "allowMultiple": false,

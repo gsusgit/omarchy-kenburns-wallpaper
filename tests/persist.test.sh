@@ -11,7 +11,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
+SETTINGS="$HOME/.config/omarchy/kenburnswallpaper.json"
 DEFAULT='{"enabled":true,"speed":40,"maxZoom":1.15,"drift":"center"}'
 
 fails=0
@@ -25,7 +25,7 @@ ipc() {
   # is briefly absent while it does. Retry instead of reporting a false failure.
   local attempt out
   for attempt in 1 2 3 4 5; do
-    out=$(qs ipc --pid "$SHELL_PID" call animated-wallpaper "$@" 2>&1 | tail -1)
+    out=$(qs ipc --pid "$SHELL_PID" call kenburnswallpaper "$@" 2>&1 | tail -1)
     [[ "$out" != *"Could not"* && "$out" != *"error"* && -n "$out" ]] && { printf '%s' "$out"; return 0; }
     sleep 1
   done

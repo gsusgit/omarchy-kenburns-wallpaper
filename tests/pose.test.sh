@@ -16,7 +16,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-SETTINGS="$HOME/.config/omarchy/animated-wallpaper.json"
+SETTINGS="$HOME/.config/omarchy/kenburnswallpaper.json"
 DEFAULT='{"enabled":true,"speed":40.0,"maxZoom":1.15,"drift":"center"}'
 # These suites write the same file the panel writes, so they put back whatever was
 # there when they started: wiping a human's settings is not a test's business.
@@ -50,7 +50,7 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
     printf '%s\n' "$cfg" > "$SETTINGS"
     local start; start=$(date +%s)
     sleep 2                                 # let the FileView watcher fire
-    if ! journalctl --user -b --since "@$start" -o cat | grep -aq "animated-wallpaper] config:"; then
+    if ! journalctl --user -b --since "@$start" -o cat | grep -aq "kenburnswallpaper] config:"; then
       echo "-- $name: the settings file was not picked up"
       fails=$((fails + 1)); return 1
     fi
@@ -63,7 +63,7 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
     # trace mixes two configs and every assertion below would fail for a reason
     # that has nothing to do with the code (this poisoned a run: the numbers
     # matched the panel's values exactly). Retry instead of reporting noise.
-    if [[ $(grep -ac "animated-wallpaper] config:" "/tmp/trace-$name.raw") -gt 1 ]]; then
+    if [[ $(grep -ac "kenburnswallpaper] config:" "/tmp/trace-$name.raw") -gt 1 ]]; then
       echo "-- $name: the config changed under the test (someone applied from the panel), retry $attempt"
       sleep 3
       continue
@@ -72,8 +72,8 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
     # Only the samples belonging to THIS config: the tail of the previous
     # scenario's trace would otherwise land in the same loop indices and poison
     # every assertion (that cost one debugging round).
-    awk 'seen { print } /animated-wallpaper\] config:/ { seen = 1 }' "/tmp/trace-$name.raw" \
-      | grep -a "animated-wallpaper] pose " > "/tmp/pose-$name.txt" || true
+    awk 'seen { print } /kenburnswallpaper\] config:/ { seen = 1 }' "/tmp/trace-$name.raw" \
+      | grep -a "kenburnswallpaper] pose " > "/tmp/pose-$name.txt" || true
     echo "-- $name  ($(wc -l < "/tmp/pose-$name.txt") samples)"
     python3 tests/analyse_pose.py "$mode" "$@" < "/tmp/pose-$name.txt"
     fails=$((fails + $?))

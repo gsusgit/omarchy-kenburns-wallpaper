@@ -25,7 +25,7 @@ import "Settings.js" as Settings
 // surface) go through the service: it owns the file.
 Panel {
   id: root
-  moduleName: "gsus.animated-wallpaper"
+  moduleName: "io.github.gsusgit.kenburnswallpaper"
   manageIpc: false
 
   property var anchorItem: null
@@ -139,7 +139,7 @@ Panel {
           Text {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - resetBtn.width - animateSwitch.width - parent.spacing * 2
-            text: "Animated wallpaper"
+            text: "Ken Burns Wallpaper"
             color: root.barForeground
             font.family: root.fontFamily
             font.pixelSize: Style.font.subtitle

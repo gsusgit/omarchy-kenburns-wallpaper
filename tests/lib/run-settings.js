@@ -21,7 +21,7 @@ const sourcePath = path.join(__dirname, "..", "..", "Settings.js");
 const src = fs.readFileSync(sourcePath, "utf8").replace(/^\.pragma library\s*$/m, "");
 const names = [...src.matchAll(/^(?:function|var)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]);
 
-const modulePath = "/tmp/gsus-settings-module.js";
+const modulePath = "/tmp/kenburnswallpaper-settings-module.js";
 fs.writeFileSync(modulePath, src + "\nmodule.exports = { " + names.join(", ") + " };\n");
 
 const S = require(modulePath);
