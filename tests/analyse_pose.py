@@ -286,6 +286,42 @@ elif MODE == "ease":
                       "mid %.5f vs ends %.5f" % (max(mid), max(edge)))
             else:
                 bad("samples in both the middle and the ends of a half")
+
+elif MODE == "wander":
+    # The heading is allowed to change only at the seam: zoom returns to 1, pan
+    # vanishes, then the next loop opens along a different compass point. The
+    # first complete loop keeps the locked heading the file started with.
+    check(len(complete) >= 2, "at least two complete loops observed",
+          "complete=%d of %d" % (len(complete), len(cycle_ids)))
+    check(abs(min(zooms) - 1.0) < 0.02, "the zoom still returns to 1.0", "%.4f" % min(zooms))
+
+    headings = []
+    for cy, group in complete:
+        peak = max(group, key=lambda s: s["z"])
+        headings.append((cy, peak.get("drift"), peak["x"], peak["y"]))
+        near = [s for s in group if s["z"] < 1.01]
+        if near:
+            check(all(abs(s["x"]) < 0.005 and abs(s["y"]) < 0.005 for s in near),
+                  "loop %d: the pan vanishes at the seam" % cy)
+        else:
+            bad("loop %d: samples near the unzoomed pose" % cy)
+
+    if len(headings) >= 2:
+        changed = 0
+        for a, b in zip(headings, headings[1:]):
+            if a[1] != b[1] or abs(a[2] - b[2]) > 1e-4 or abs(a[3] - b[3]) > 1e-4:
+                changed += 1
+        check(changed >= 1, "a later loop takes a different heading",
+              "headings=%s" % ", ".join("%s" % h[1] for h in headings))
+    else:
+        bad("two loops to compare headings")
+
+    worst = 0.0
+    for s in samples:
+        if s["z"] > 1.0005:
+            worst = max(worst, abs(s["x"]) / ((s["z"] - 1) / 2), abs(s["y"]) / ((s["z"] - 1) / 2))
+    check(worst <= 1.0 + 1e-9, "wander never pulls the image inside the window",
+          "worst offset/margin = %.3f" % worst)
 else:
     bad("unknown analyser mode: %s" % MODE)
 

@@ -4,7 +4,7 @@
 // Service.qml (which applies them) and Menu.qml (which edits them), so it lives
 // in its own module instead of being duplicated in both files.
 //
-// v3.0 schema, and deliberately small. Removed after living with them:
+// v5 schema. Still small. Removed after living with them:
 // `preset` (a shortcut through four values, not an effect of its own),
 // `handheld` (a ~50 px wobble on top of a 40 s traverse read as the wallpaper
 // vibrating, not as a hand), `breathing` (with a continuous loop its "off" state
@@ -12,8 +12,17 @@
 // inert) and `smoothEasing` (ease-in-out is simply the better default; the toggle
 // only offered a worse one).
 //
-// Four values remain, and each one changes something you can see: whether it
-// moves, how long the loop takes, how far it zooms, and which way it drifts.
+// Motion blur and a freeform tint were considered for v5 and rejected: at these
+// speeds the per-frame travel is about a pixel, and a colour wash fights the
+// photograph the theme already chose.
+//
+// Six values remain, and each one changes something you can see: whether it
+// moves, how long the loop takes, how far it zooms, which way it drifts, whether
+// that heading changes at the loop seam, and whether a finished loop asks
+// Omarchy for the next wallpaper.
+// Atmosphere was tried in v5 and dropped after living with it: a grade on top
+// of the photograph never read as room light, only as a faint pulse, so it
+// failed the same test as breathing and the v0.5 overlays.
 // There is no zoom-direction control: with a symmetric loop, "in" and "out" are
 // the same oscillation half a period apart, so the switch could only ever choose
 // the pose you start on -- invisible within seconds of a loop that never stops.
@@ -76,11 +85,26 @@ function driftVector(value) {
   return v ? v : DRIFT_VECTORS.center
 }
 
+// A new heading for wander, never the one we just used. At the loop seam the
+// zoom is 1 and the pan is 0, so the swap is invisible. Math.random is fine:
+// this is a heading, not a cryptographic choice.
+function pickWanderDrift(current) {
+  var cur = normaliseDrift(current)
+  var choices = []
+  for (var i = 0; i < DRIFTS.length; i++) {
+    if (DRIFTS[i] !== cur) choices.push(DRIFTS[i])
+  }
+  if (choices.length === 0) return cur
+  return choices[Math.floor(Math.random() * choices.length)]
+}
+
 var DEFAULTS = {
   enabled: true,
   speed: 35.0,
   maxZoom: 1.15,
-  drift: "center"
+  drift: "center",
+  wander: false,
+  advance: false
 }
 
 // The key is `speed` -- that is what the panel calls it -- and its value is the
@@ -180,14 +204,18 @@ function normaliseDrift(value) {
 // Whitelist + clamp. Anything unreadable, out of range or unknown becomes the
 // default, so a hand-edited file can never break the renderer, a previous
 // schema's keys are dropped rather than resurrected, and the file always
-// round-trips to a canonical shape.
+// round-trips to a canonical shape. `trace` is a test-only flag on the raw
+// file; it is deliberately not part of this object so a panel save cannot
+// persist it.
 function sanitize(raw) {
   var input = (raw && typeof raw === "object") ? raw : {}
   return {
     enabled: bool(input.enabled, DEFAULTS.enabled),
     speed: readSpeed(input),
     maxZoom: snapMaxZoom(input.maxZoom),
-    drift: normaliseDrift(input.drift)
+    drift: normaliseDrift(input.drift),
+    wander: bool(input.wander, DEFAULTS.wander),
+    advance: bool(input.advance, DEFAULTS.advance)
   }
 }
 
@@ -199,4 +227,13 @@ function parse(text) {
 
 function serialise(config) {
   return JSON.stringify(sanitize(config), null, 2) + "\n"
+}
+
+function wantsTrace(text) {
+  try {
+    var obj = JSON.parse(String(text || ""))
+    return !!(obj && obj.trace === true)
+  } catch (e) {
+    return false
+  }
 }

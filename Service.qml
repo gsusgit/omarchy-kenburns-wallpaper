@@ -1,10 +1,13 @@
 import QtQuick
 import Quickshell
+import Quickshell.Hyprland
 import Quickshell.Io
+import Quickshell.Services.UPower
 import Quickshell.Wayland
 import QtQuick.Effects
 import QtQuick.Shapes
 import qs.Commons
+import qs.Ui
 import "Settings.js" as Settings
 
 // Ken Burns Wallpaper.
@@ -33,14 +36,13 @@ Item {
   property var manifest: null
 
   // ---------------------------------------------------------- internal dials
-  // Deliberately not user-configurable: the frame budget, the room-light breath
-  // (unrelated to the Ken Burns move) and Omarchy's own reveal timing.
-  readonly property int frameMs: 70            // repaint interval (~14 fps)
-  readonly property real exposureDepth: 0.025
-  readonly property int exposurePeriodMs: 22000
+  // Frame budget is not user-configurable. On AC it stays at ~14 fps; on
+  // battery it drops to ~8 fps, which is still smooth for a 10–60 s traverse.
+  readonly property int frameMs: UPower.onBattery ? 125 : 70
   readonly property int revealMs: 420
   readonly property int traceMs: 150           // pose trace interval (tests read it)
   readonly property int traceWindowMs: 90000   // trace is bounded: no line-per-second forever
+  readonly property string screensaverClass: "org.omarchy.screensaver"
 
   // NOT inside the plugin directory: the shell watches a plugin's whole folder
   // for changes and reloads it, so a settings file written there reloads the
@@ -54,13 +56,32 @@ Item {
   // everything, so `config` is always complete and in range whatever is on disk.
   property var config: Settings.sanitize({})
   property bool enabled: true                  // mirrors config.enabled
+  property bool configReady: false
+  property real appliedSpeed: -1
+
+  // Wander's live heading lives in memory only. Writing it to the settings
+  // file every loop would reload the plugin. `config.drift` is the locked
+  // heading the panel persists.
+  property string liveDrift: "center"
+  property bool liveDriftLocked: false
+  property real panX: 0
+  property real panY: 0
+  property int lastLoopIndex: 0
+
+  function wantsTrace(rawText) {
+    if (Quickshell.env("KENBURNS_TRACE") === "1") return true
+    return Settings.wantsTrace(rawText)
+  }
 
   function applyConfig(rawText) {
     var parsed = Settings.parse(rawText)
-    root.config = parsed
-    root.enabled = parsed.enabled
+    var same = root.configReady && Settings.serialise(parsed) === Settings.serialise(root.config)
+    if (!same) {
+      root.config = parsed
+      root.configReady = true
+    }
     console.log("[kenburnswallpaper] config: " + JSON.stringify(parsed))
-    root.startTrace()
+    if (root.wantsTrace(rawText)) root.startTrace()
   }
 
   // Writing goes through a Process, not through FileView.setText.
@@ -105,6 +126,33 @@ Item {
     root.config = Settings.sanitize(next)
   }
 
+  function snapPanToLive() {
+    var v = Settings.driftVector(root.liveDrift)
+    root.panX = v[0] * root.driftLength
+    root.panY = v[1] * root.driftLength
+  }
+
+  onLiveDriftChanged: root.snapPanToLive()
+
+  // Keep the pose when SPEED changes: the same fraction of the loop, on the
+  // new period, so dragging the slider does not snap back to zoom 1.
+  function reparameterizeSpeed(newSpeed) {
+    var speed = Number(newSpeed)
+    if (!isFinite(speed)) speed = Settings.DEFAULTS.speed
+    if (root.appliedSpeed < 0) {
+      root.appliedSpeed = speed
+      return
+    }
+    if (speed === root.appliedSpeed) return
+    var oldCycle = Math.max(1000, root.appliedSpeed * 1000)
+    var seg = Math.max(0, Math.min(1, (root.clock % oldCycle) / oldCycle))
+    var loop = Math.floor(root.clock / oldCycle)
+    root.appliedSpeed = speed
+    var newCycle = Math.max(1000, speed * 1000)
+    root.clock = loop * newCycle + seg * newCycle
+    root.lastLoopIndex = loop
+  }
+
   // Scriptable surface. Handy from a terminal, and it is how the persistence
   // assertions in tests/persist.test.sh drive a real write + reload round trip.
   //
@@ -134,8 +182,16 @@ Item {
     function setSpeed(value: string): void { root.applyIpc("speed", value) }
     function setMaxZoom(value: string): void { root.applyIpc("maxZoom", value) }
     function setDrift(value: string): void { root.applyIpc("drift", value) }
+    function setWander(value: string): void { root.applyIpc("wander", value) }
+    function setAdvance(value: string): void { root.applyIpc("advance", value) }
 
     function reset(): void {
+      root.clock = 0
+      root.lastTickMs = 0
+      root.lastLoopIndex = 0
+      root.liveDrift = Settings.DEFAULTS.drift
+      root.liveDriftLocked = false
+      root.snapPanToLive()
       root.config = Settings.sanitize({})
       root.save()
     }
@@ -145,11 +201,18 @@ Item {
     }
   }
 
-  // A config change restarts the cycle, so the new values apply from a pose you
-  // can predict instead of mid-segment.
+  // Settings apply on the current pose. A SPEED change keeps the loop
+  // fraction; turning wander off snaps the live heading back to the locked
+  // one. Wallpaper changes and reset still zero the clock.
   onConfigChanged: {
-    root.clock = 0
-    root.lastTickMs = 0
+    root.enabled = root.config.enabled
+    root.reparameterizeSpeed(root.config.speed)
+    if (!root.config.wander) {
+      root.liveDrift = root.config.drift
+      root.liveDriftLocked = false
+    } else if (!root.liveDriftLocked) {
+      root.liveDrift = root.config.drift
+    }
   }
 
   FileView {
@@ -169,12 +232,15 @@ Item {
     onFileChanged: reload()
   }
 
-  // A bounded trace of the pose. It prints the very properties the window
-  // consumes, which is what tests/pose.test.sh asserts against -- the screen
-  // belongs to the user, so a test that needs it to be idle would be flaky.
+  // A bounded trace of the pose. Off unless KENBURNS_TRACE=1 or the settings
+  // file carries `"trace": true` (pose tests write that flag; it is not part
+  // of the sanitised schema, so a panel save cannot leave it on).
   property bool tracing: false
 
   function startTrace() {
+    root.clock = 0
+    root.lastTickMs = 0
+    root.lastLoopIndex = 0
     root.tracing = true
     traceOff.restart()
   }
@@ -195,13 +261,15 @@ Item {
     // (0..1), `z` is the scale factor (1.0 up to maxZoom), and `x`/`y` are the pan
     // as a fraction of the margin the zoom opens. Reading `t` as seconds gives
     // silently zero speeds -- a measurement of mine went wrong exactly that way.
+    // `drift` is the live heading (wander may have moved it since the file).
     onTriggered: console.log("[kenburnswallpaper] pose " + JSON.stringify({
       t: Math.round(root.clock),
       cy: root.loopIndex,
       seg: Number(root.segment.toFixed(4)),
       z: Number(root.zoom.toFixed(6)),
       x: Number(root.panOffsetX.toFixed(6)),
-      y: Number(root.panOffsetY.toFixed(6))
+      y: Number(root.panOffsetY.toFixed(6)),
+      drift: root.liveDrift
     }))
   }
 
@@ -223,8 +291,7 @@ Item {
   readonly property int loopIndex: Math.floor(clock / cycleMs)
   readonly property real segment: Math.max(0, Math.min(1, (clock % cycleMs) / cycleMs))
 
-  // 0 -> 1 -> 0 across one period, cosine-eased at both ends. The exposure breath
-  // is the same curve at a much slower period, so both share this one function.
+  // 0 -> 1 -> 0 across one period, cosine-eased at both ends.
   function cosineWave(periodMs) {
     return 0.5 - 0.5 * Math.cos(2 * Math.PI * (root.clock % periodMs) / periodMs)
   }
@@ -251,27 +318,144 @@ Item {
   // sub-pixel rounding could show a hairline of whatever is underneath. 0.9 leaves
   // ~14 px of slack at the default zoom.
   readonly property real driftLength: 0.9
-  readonly property var driftVector: Settings.driftVector(config.drift)
-  readonly property real panX: driftVector[0] * driftLength
-  readonly property real panY: driftVector[1] * driftLength
   readonly property real panOffsetX: panX * (zoom - 1) / 2   // as a fraction of the screen
   readonly property real panOffsetY: panY * (zoom - 1) / 2
-
-  readonly property real exposure: exposureDepth * root.cosineWave(exposurePeriodMs)
 
   property real clock: 0
   property real lastTickMs: 0
 
+  onLoopIndexChanged: {
+    var idx = root.loopIndex
+    var prev = root.lastLoopIndex
+    root.lastLoopIndex = idx
+    if (idx <= prev) return
+    if (root.config.wander) {
+      root.liveDrift = Settings.pickWanderDrift(root.liveDrift)
+      root.liveDriftLocked = true
+    }
+    if (root.config.advance)
+      root.requestAdvance()
+  }
+
+  // ------------------------------------------------------- pause when unseen
+  readonly property var lockService: shell && shell.serviceFor ? shell.serviceFor("omarchy.lock") : null
+  readonly property bool sessionLocked: !!(lockService && lockService.locked)
+
+  property var screensaverWindows: ({})
+  property int screensaverWindowCount: 0
+  property var coveredScreenNames: []
+
+  readonly property bool allScreensCovered: {
+    var screens = Quickshell.screens
+    if (!screens || screens.length === 0) return false
+    var names = root.coveredScreenNames
+    for (var i = 0; i < screens.length; i++) {
+      var screen = screens[i]
+      if (!screen || !screen.name) return false
+      var hit = false
+      for (var j = 0; j < names.length; j++) {
+        if (names[j] === screen.name) { hit = true; break }
+      }
+      if (!hit) return false
+    }
+    return true
+  }
+
+  readonly property bool clockRunning: enabled && !sessionLocked
+                                       && screensaverWindowCount === 0
+                                       && !allScreensCovered
+
+  function eventParts(event, count) {
+    try {
+      if (event && event.parse) return event.parse(count)
+    } catch (e) {
+    }
+    return String(event && event.data ? event.data : "").split(",")
+  }
+
+  function setScreensaverWindow(address, visible) {
+    var key = String(address || "")
+    if (!key) return
+    var next = {}
+    var count = 0
+    var current = root.screensaverWindows || {}
+    for (var existing in current) {
+      if (existing !== key && current[existing]) {
+        next[existing] = true
+        count += 1
+      }
+    }
+    if (visible) {
+      next[key] = true
+      count += 1
+    }
+    root.screensaverWindows = next
+    root.screensaverWindowCount = count
+  }
+
+  function handleHyprlandEvent(event) {
+    var name = String(event && event.name ? event.name : "")
+    if (name === "openwindow") {
+      var open = root.eventParts(event, 4)
+      if (String(open[2] || "") === root.screensaverClass)
+        root.setScreensaverWindow(open[0], true)
+    } else if (name === "closewindow") {
+      var close = root.eventParts(event, 1)
+      var address = String(close[0] || "")
+      if (root.screensaverWindows[address])
+        root.setScreensaverWindow(address, false)
+    }
+  }
+
+  function refreshCoverage() {
+    var names = []
+    try {
+      var tops = ToplevelManager.toplevels.values
+      for (var i = 0; i < tops.length; i++) {
+        var t = tops[i]
+        if (!t || !t.fullscreen) continue
+        var ss = t.screens
+        for (var j = 0; j < ss.length; j++) {
+          if (ss[j] && ss[j].name) names.push(ss[j].name)
+        }
+      }
+    } catch (e) {
+    }
+    root.coveredScreenNames = names
+  }
+
+  function screenCovered(screen) {
+    if (!screen || !screen.name) return false
+    var names = root.coveredScreenNames
+    for (var i = 0; i < names.length; i++) {
+      if (names[i] === screen.name) return true
+    }
+    return false
+  }
+
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) { root.handleHyprlandEvent(event) }
+  }
+
+  Timer {
+    interval: 400
+    running: true
+    repeat: true
+    triggeredOnStart: true
+    onTriggered: root.refreshCoverage()
+  }
+
   onEnabledChanged: root.lastTickMs = 0
+  onClockRunningChanged: root.lastTickMs = 0
 
   Timer {
     interval: root.frameMs
-    running: root.enabled
+    running: root.clockRunning
     repeat: true
     // Real elapsed time, not a tick count: a Timer that slips when the shell is
     // busy must not stretch `duration: 20` into 30 real seconds. lastTickMs is
-    // discarded on pause and on a config change so the first tick after either
-    // cannot add a huge delta.
+    // discarded on pause so the first tick after cannot add a huge delta.
     onTriggered: {
       var now = Date.now()
       if (root.lastTickMs > 0) root.clock += (now - root.lastTickMs)
@@ -302,10 +486,23 @@ Item {
     root.revealProgress = 1
     root.clock = 0          // a new image starts a fresh Ken Burns move
     root.lastTickMs = 0
+    root.lastLoopIndex = 0
+    root.snapPanToLive()
   }
 
   function imageUrl(path) {
     return path ? Util.fileUrl(path) : ""
+  }
+
+  function requestAdvance() {
+    if (root.revealProgress < 1 || root.incomingPath !== "") return
+    if (advanceProc.running) return
+    advanceProc.running = true
+  }
+
+  Process {
+    id: advanceProc
+    command: ["omarchy-theme-bg-next"]
   }
 
   Process {
@@ -358,22 +555,23 @@ Item {
 
   // Instant reaction to a wallpaper/theme change: the symlink is replaced
   // inside the state dir, so watching the directory catches it immediately.
-  // The 5 s readlink poll is only a net if the watcher ever dies.
+  // The 30 s readlink poll is only a net if the watcher ever dies.
   Process {
     id: watcher
     command: ["inotifywait", "-m", "-q", "-e", "create,moved_to,close_write,delete", root.stateDir]
     stdout: SplitParser { onRead: function(line) { root.refresh() } }
-    onExited: console.warn("[kenburnswallpaper] inotifywait exited; relying on the 5 s poll")
+    onExited: console.warn("[kenburnswallpaper] inotifywait exited; relying on the 30 s poll")
   }
 
   Timer {
-    interval: 5000
+    interval: 30000
     running: true
     repeat: true
     onTriggered: root.refresh()
   }
 
   Component.onCompleted: {
+    root.snapPanToLive()
     refresh()
     watcher.running = true
     // Do not log config here: FileView has not read the file yet, so it would
@@ -388,8 +586,25 @@ Item {
       required property var modelData
 
       screen: modelData
-      color: "transparent"
+      color: baseImage.status === Image.Ready ? "black" : "transparent"
       anchors { top: true; bottom: true; left: true; right: true }
+      visible: !remapGuard.remapping && !win.covered
+               && !root.sessionLocked && root.screensaverWindowCount === 0
+
+      readonly property bool covered: {
+        var names = root.coveredScreenNames
+        var n = modelData && modelData.name
+        if (!n) return false
+        for (var i = 0; i < names.length; i++) {
+          if (names[i] === n) return true
+        }
+        return false
+      }
+
+      ScreenMoveRemap {
+        id: remapGuard
+        window: win
+      }
 
       // Visual only: an empty input region, so the surface never eats a click
       // (desktop double-click still opens Omarchy's background switcher).
@@ -403,6 +618,12 @@ Item {
       // below every window and the bar.
       WlrLayershell.layer: WlrLayer.Bottom
       WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+
+      // Decode only as much as the zoomed crop needs. The parent scales up to
+      // maxZoom, so the texture has to be that much larger than the panel, not
+      // the wallpaper's native 6K. mipmap is off: the zoom magnifies.
+      readonly property int decodeW: Math.ceil(Math.max(1, win.width) * root.config.maxZoom)
+      readonly property int decodeH: Math.ceil(Math.max(1, win.height) * root.config.maxZoom)
 
       // ------------------------------------------------------- wallpaper
       // One scaled layer: the surface clips whatever leaves the screen, which is
@@ -429,7 +650,9 @@ Item {
           asynchronous: true
           cache: true
           smooth: true
-          mipmap: true
+          mipmap: false
+          sourceSize.width: win.decodeW
+          sourceSize.height: win.decodeH
           // Never paint an empty frame: while our copy is not ready,
           // Omarchy's own wallpaper underneath shows through.
           opacity: status === Image.Ready ? 1 : 0
@@ -457,7 +680,9 @@ Item {
             asynchronous: true
             cache: false
             smooth: true
-            mipmap: true
+            mipmap: false
+            sourceSize.width: win.decodeW
+            sourceSize.height: win.decodeH
             onStatusChanged: if (status === Image.Ready) root.startReveal()
           }
         }
@@ -492,18 +717,6 @@ Item {
             }
           }
         }
-      }
-
-      // Nothing is painted on top of the wallpaper any more: the v0.1 accent
-      // bloom, the v0.3 glint band and the motes are all gone. The image is
-      // the entire effect -- it moves, and that is all.
-
-      // Exposure: the whole picture darkens a little and comes back, like the
-      // light in the room changing. Topmost, so it grades everything.
-      Rectangle {
-        anchors.fill: parent
-        color: "black"
-        opacity: root.exposure
       }
     }
   }

@@ -18,11 +18,11 @@ run() {
   node tests/lib/run-settings.js "$1" 2>&1
 }
 
-DEFAULT='{"enabled":true,"speed":35,"maxZoom":1.15,"drift":"center"}'
+DEFAULT='{"enabled":true,"speed":35,"maxZoom":1.15,"drift":"center","wander":false,"advance":false}'
 
 # ---------------------------------------------------------------- the schema
 check "empty input gives the documented defaults" "$DEFAULT" "$(run 'S.sanitize({})')"
-check "the schema is exactly four values" 'enabled,speed,maxZoom,drift' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
+check "the schema is exactly six values" 'enabled,speed,maxZoom,drift,wander,advance' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
 check "preset is gone" 'undefined' "$(run 'typeof S.sanitize({preset: "classicCinema"}).preset')"
 check "handheld is gone" 'undefined' "$(run 'typeof S.sanitize({handheld: true}).handheld')"
 check "breathing is gone" 'undefined' "$(run 'typeof S.sanitize({breathing: false}).breathing')"
@@ -103,7 +103,7 @@ check "unreadable enabled keeps its default" 'true' "$(run 'S.sanitize({enabled:
 check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, speed: 35})')"
 check "garbage text parses to the defaults" "$DEFAULT" "$(run 'S.parse("not json at all")')"
 check "null parses to the defaults" "$DEFAULT" "$(run 'S.parse(null)')"
-check "an old v2 file keeps only what still exists" '{"enabled":true,"speed":35,"maxZoom":1.25,"drift":"center"}' \
+check "an old v2 file keeps only what still exists" '{"enabled":true,"speed":35,"maxZoom":1.25,"drift":"center","wander":false,"advance":false}' \
   "$(run 'S.sanitize({preset: "custom", enabled: true, duration: 35, maxZoom: 1.25, direction: "out", smoothEasing: true, handheld: true, breathing: true})')"
 
 # ------------------------------------------------------------------- drift
@@ -132,10 +132,10 @@ check "an old file's driftLength is dropped" 'false' "$(run 'Object.keys(S.sanit
 check "there are no driftLength limits left" 'undefined' "$(run 'typeof S.LIMITS.driftLength')"
 
 # --------------------------------------------------------------- serialising
-check "serialise round-trips canonically" '{"enabled":true,"speed":23,"maxZoom":1.25,"drift":"upLeft"}' \
+check "serialise round-trips canonically" '{"enabled":true,"speed":23,"maxZoom":1.25,"drift":"upLeft","wander":false,"advance":false}' \
   "$(run 'JSON.parse(S.serialise({speed: 23, maxZoom: 1.25, drift: "upLeft"}))')"
 check "serialise never writes a removed key" 'false' \
-  "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode","direction","driftLength","duration"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
+  "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode","direction","driftLength","duration","trace","atmosphere"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
 
 # The panel's unsaved-changes flag is `serialise(draft) != serialise(applied)`,
 # so equality has to be canonical or the warning lights up on an untouched panel.
@@ -144,6 +144,33 @@ check "a numeric string is not a change" 'true' "$(run 'S.serialise({speed: "23"
 check "key order is not a change" 'true' "$(run 'S.serialise({drift: "up", speed: 23}) === S.serialise({speed: 23, drift: "up"})')"
 check "a real change is detected" 'false' "$(run 'S.serialise({speed: 35}) === S.serialise({speed: 23})')"
 check "flipping the drift is a change" 'false' "$(run 'S.serialise({drift: "left"}) === S.serialise({drift: "right"})')"
+
+# --------------------------------------------------------------------- wander
+check "wander defaults to off" 'false' "$(run 'S.sanitize({}).wander')"
+check "wander reads a boolean" 'true' "$(run 'S.sanitize({wander: true}).wander')"
+check "wander reads a true string" 'true' "$(run 'S.sanitize({wander: "true"}).wander')"
+check "an unreadable wander falls back to off" 'false' "$(run 'S.sanitize({wander: "maybe"}).wander')"
+check "pickWanderDrift never returns the current heading" 'true' \
+  "$(run 'S.DRIFTS.every(function(d){var seen={};for(var i=0;i<40;i++){var n=S.pickWanderDrift(d);if(n===d)return false;seen[n]=true}return Object.keys(seen).length>=1})')"
+check "pickWanderDrift only returns compass points" 'true' \
+  "$(run 'S.DRIFTS.every(function(d){return S.DRIFTS.indexOf(S.pickWanderDrift(d))>=0})')"
+
+# ---------------------------------------------------------------- atmosphere
+# Tried in v5 and dropped: a grade on the photograph never read as room light.
+check "atmosphere is gone from the schema" 'undefined' "$(run 'typeof S.sanitize({atmosphere: true}).atmosphere')"
+check "an old file's atmosphere is dropped" 'false' "$(run 'Object.keys(S.sanitize({atmosphere: true})).indexOf("atmosphere") >= 0')"
+
+# ------------------------------------------------------------------- advance
+check "advance defaults to off" 'false' "$(run 'S.sanitize({}).advance')"
+check "advance reads a boolean" 'true' "$(run 'S.sanitize({advance: true}).advance')"
+check "an unreadable advance stays off" 'false' "$(run 'S.sanitize({advance: "next"}).advance')"
+
+# -------------------------------------------------------------- trace (tests)
+check "trace is not a schema key" 'undefined' "$(run 'typeof S.sanitize({trace: true}).trace')"
+check "a file with trace still round-trips without it" 'false' \
+  "$(run 'S.serialise({trace: true, speed: 35}).indexOf("\"trace\"") >= 0')"
+check "wantsTrace reads the raw flag" 'true' "$(run 'S.wantsTrace("{\"trace\":true}")')"
+check "wantsTrace ignores a sanitised config" 'false' "$(run 'S.wantsTrace(S.serialise({trace: true}))')"
 
 # -------------------------------------------------------------- level sliders
 # Both sliders are driven by the LEVEL INDEX and round with `integer: true`, so

@@ -70,6 +70,7 @@ BarWidget {
     anchors.fill: parent
     bar: root.bar
     tooltipText: root.animating ? "Ken Burns - ON" : "Ken Burns - OFF"
+    dimmed: !root.animating
     iconComponent: Component {
       Item {
         ApertureIcon {
@@ -80,7 +81,14 @@ BarWidget {
       }
     }
     onPressed: function(buttonCode) {
-      if (buttonCode === Qt.LeftButton) root.toggle()
+      if (buttonCode === Qt.LeftButton) {
+        root.toggle()
+        return
+      }
+      if (buttonCode === Qt.RightButton && root.service) {
+        root.service.set("enabled", !root.service.enabled)
+        root.service.save()
+      }
     }
   }
 }

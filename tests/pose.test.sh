@@ -17,7 +17,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/kenburnswallpaper.json"
-DEFAULT='{"enabled":true,"speed":35.0,"maxZoom":1.15,"drift":"center"}'
+DEFAULT='{"enabled":true,"speed":35.0,"maxZoom":1.15,"drift":"center","wander":false,"advance":false}'
 # These suites write the same file the panel writes, so they put back whatever was
 # there when they started: wiping a human's settings is not a test's business.
 BACKUP="$(mktemp)"
@@ -89,12 +89,15 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
 
 # The duration is one of five levels; 23 s is the nearest short loop, so a scenario
 # is 23 s and the capture windows are whole numbers of loops plus a margin.
-scenario loop '{"enabled":true,"speed":23,"maxZoom":1.20}'  80 loop 23 1.20
-scenario ease '{"enabled":true,"speed":23,"maxZoom":1.20}'  52 ease 1.20
+scenario loop '{"enabled":true,"speed":23,"maxZoom":1.20,"trace":true}'  80 loop 23 1.20
+scenario ease '{"enabled":true,"speed":23,"maxZoom":1.20,"trace":true}'  52 ease 1.20
 # The drift is its own axis: any zoom can creep any way, including a diagonal. Its
 # length is fixed at 0.9 of the margin (see Service.qml), which is what the
 # analyser is told to expect.
-scenario driftDiag '{"enabled":true,"speed":23,"maxZoom":1.20,"drift":"upLeft"}' 52 drift -1 -1 0.9
+scenario driftDiag '{"enabled":true,"speed":23,"maxZoom":1.20,"drift":"upLeft","trace":true}' 52 drift -1 -1 0.9
+# Wander picks a new heading at each loop seam, where zoom is 1 and the pan is 0,
+# so the swap cannot jump. The first loop keeps the locked heading (`right`).
+scenario wander '{"enabled":true,"speed":23,"maxZoom":1.20,"drift":"right","wander":true,"trace":true}' 80 wander
 
 echo "pose tests: $scenarios scenarios, $fails failures"
 exit $(( fails > 0 ))

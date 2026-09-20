@@ -6,16 +6,16 @@ import "Settings.js" as Settings
 
 // The settings panel behind the bar button.
 //
-// Every control writes through the service immediately: the four values are
+// Every control writes through the service immediately: the values are
 // discrete, so there is no half-chosen slider to park behind Apply. Closing
 // the panel does not throw anything away because there is nothing unsaved.
 //
-// Deliberately small. Four values, two of them steppers, and every control
-// changes something you can see. Removed after living with them: the preset
-// dropdown (a shortcut through these values, not an effect of its own), the
-// handheld shake and the breathing loop (both read as the wallpaper misbehaving
-// rather than as camera work) and the smooth-motion toggle (ease-in-out is
-// simply the better default, and the toggle only offered a worse one).
+// Deliberately small. Each control changes something you can see. Removed
+// after living with them: the preset dropdown, the handheld shake, the
+// breathing loop, the smooth-motion toggle, and Atmosphere (a grade on top
+// of the photograph that never read as light, only as a faint pulse).
+// v5 keeps Vary (a new heading at the loop seam) and Advance (next wallpaper
+// when a loop finishes).
 //
 // Animate ("enabled") lives in the header with the reset action: it is a
 // transport control, not a motion setting.
@@ -44,9 +44,14 @@ Panel {
   // against the loop period it writes, because a short loop is the fast one.
   readonly property int zoomIndex: Settings.maxZoomLevelIndex(root.draft.maxZoom)
   readonly property int speedIndex: Settings.speedLevelIndex(root.draft.speed)
+  property string liveHeading: ""
+  readonly property string shownDrift: (root.draft.wander && root.liveHeading)
+    ? root.liveHeading
+    : root.draft.drift
 
   function loadDraft() {
     root.draft = Settings.sanitize(root.service ? root.service.config : {})
+    root.liveHeading = root.service && root.service.liveDrift ? root.service.liveDrift : root.draft.drift
   }
 
   function commit(next) {
@@ -88,6 +93,9 @@ Panel {
   Connections {
     target: root.service
     function onConfigChanged() { root.loadDraft() }
+    function onLiveDriftChanged() {
+      if (root.service) root.liveHeading = root.service.liveDrift
+    }
   }
 
   KeyboardPanel {
@@ -264,23 +272,37 @@ Panel {
         PanelSeparator { foreground: root.barForeground }
 
         // -------------------------------------------------------- directions
-        PanelSectionHeader {
+        Row {
           width: parent.width
-          text: "DIRECTION"
-          foreground: root.barForeground
-          fontFamily: root.fontFamily
+          spacing: Style.space(8)
+
+          PanelSectionHeader {
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - varySwitch.width - parent.spacing
+            text: "DIRECTION"
+            foreground: root.barForeground
+            fontFamily: root.fontFamily
+          }
+
+          ToggleSwitch {
+            id: varySwitch
+            anchors.verticalCenter: parent.verticalCenter
+            checked: root.draft.wander === true
+            foreground: root.barForeground
+            onToggled: root.edit("wander", !root.draft.wander)
+
+            PanelToolTip {
+              visible: varySwitch.containsMouse
+              text: root.draft.wander ? "Vary each loop" : "Lock this direction"
+              fontFamily: root.fontFamily
+            }
+          }
         }
 
         // A 3x3 diana: the eight compass points plus the centre, so a diagonal is
         // one click -- no angle to convert and no pair of axis values to reason
-        // about. No row label above it and no length slider below it: the section
-        // header and the glyphs say everything, and the length is fixed at the
-        // ceiling (see Service.qml). Left-aligned, flush with the panel's own
-        // content, which is where a 3x3 block of chips belongs.
-        //
-        // ButtonGroup is a Row and cannot do 3x3, so this is a Grid of the same
-        // chips; Button brings focus, tooltips and Enter/Space, and centres its own
-        // content, so a chip wider than its glyph still reads as a button.
+        // about. With Vary on, the selected cell follows the live heading; a
+        // click locks that direction and turns Vary off.
         Grid {
           id: driftGrid
           columns: 3
@@ -295,13 +317,48 @@ Panel {
               height: Style.spacing.controlHeight
               text: modelData.label
               tooltipText: modelData.tooltip
-              selected: root.draft.drift === modelData.value
+              selected: root.shownDrift === modelData.value
               bordered: true
               foreground: root.barForeground
               accent: Color.accent
               background: "transparent"
               fontFamily: root.fontFamily
-              onClicked: root.edit("drift", modelData.value)
+              onClicked: {
+                var next = {}
+                for (var k in root.draft) next[k] = root.draft[k]
+                next.drift = modelData.value
+                next.wander = false
+                root.editAll(next)
+              }
+            }
+          }
+        }
+
+        PanelSeparator { foreground: root.barForeground }
+
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+
+          PanelSectionHeader {
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - advanceSwitch.width - parent.spacing
+            text: "ADVANCE"
+            foreground: root.barForeground
+            fontFamily: root.fontFamily
+          }
+
+          ToggleSwitch {
+            id: advanceSwitch
+            anchors.verticalCenter: parent.verticalCenter
+            checked: root.draft.advance === true
+            foreground: root.barForeground
+            onToggled: root.edit("advance", !root.draft.advance)
+
+            PanelToolTip {
+              visible: advanceSwitch.containsMouse
+              text: root.draft.advance ? "Next wallpaper each loop" : "Stay on this wallpaper"
+              fontFamily: root.fontFamily
             }
           }
         }

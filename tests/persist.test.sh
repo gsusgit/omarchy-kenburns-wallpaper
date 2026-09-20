@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/kenburnswallpaper.json"
-DEFAULT='{"enabled":true,"speed":35,"maxZoom":1.15,"drift":"center"}'
+DEFAULT='{"enabled":true,"speed":35,"maxZoom":1.15,"drift":"center","wander":false,"advance":false}'
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -81,8 +81,8 @@ printf '%s\n' "$DEFAULT" > "$SETTINGS"     # a known baseline to assert against
 sleep 2
 check "status starts at the defaults" "$DEFAULT" "$(ipc status)"
 
-echo "-- the file holds exactly the four values"
-check "the key set is closed" 'drift,enabled,maxZoom,speed' \
+echo "-- the file holds exactly the schema"
+check "the key set is closed" 'advance,drift,enabled,maxZoom,speed,wander' \
   "$(python3 -c "import json;print(','.join(sorted(json.load(open('$SETTINGS')).keys())))")"
 check "pauseAtEnd is not in the file" "keyerror" "$(disk pauseAtEnd 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "mode is not in the file" "keyerror" "$(disk mode 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
@@ -93,6 +93,7 @@ check "smoothEasing is not in the file" "keyerror" "$(disk smoothEasing 2>&1 | g
 check "direction is not in the file" "keyerror" "$(disk direction 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "driftLength is not in the file" "keyerror" "$(disk driftLength 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "the old duration key is not in the file" "keyerror" "$(disk duration 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+check "atmosphere is not in the file" "keyerror" "$(disk atmosphere 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 
 echo "-- writing each key through IPC"
 ipc setSpeed 35 >/dev/null
@@ -125,20 +126,31 @@ ipc setDrift sideways >/dev/null
 wait_for_disk "d['drift'] == 'center'" 6 && check "an unknown drift falls back to centre" "center" "$(disk drift)" \
   || check "an unknown drift falls back to centre" "center" "timeout"
 
+ipc setWander true >/dev/null
+wait_for_disk "d['wander'] == True" 6 && check "wander persists" "True" "$(python3 -c "import json;print(json.load(open('$SETTINGS'))['wander'])")" \
+  || check "wander persists" "True" "timeout"
+
+ipc setAdvance true >/dev/null
+wait_for_disk "d['advance'] == True" 6 && check "advance persists" "True" "$(python3 -c "import json;print(json.load(open('$SETTINGS'))['advance'])")" \
+  || check "advance persists" "True" "timeout"
+
+# Wander's live heading is memory-only: a panel save must not grow extra keys.
+check "trace is not persisted" "keyerror" "$(disk trace 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
+
 ipc setSpeed 48 >/dev/null
 ipc setMaxZoom 1.25 >/dev/null
 wait_for_disk "d['maxZoom'] == 1.25" 6
 
 echo "-- surviving a restart (the acceptance criterion)"
 sleep 2
-check "the values are in place before the restart" "48|1.25|center" \
-  "$(disk speed)|$(disk maxZoom)|$(disk drift)"
+check "the values are in place before the restart" "48|1.25|center|True|True" \
+  "$(disk speed)|$(disk maxZoom)|$(disk drift)|$(python3 -c "import json;d=json.load(open('$SETTINGS'));print(d['wander'])")|$(python3 -c "import json;d=json.load(open('$SETTINGS'));print(d['advance'])")"
 omarchy-restart-shell >/dev/null 2>&1
 sleep 10
 SHELL_PID=$(qs list --all | awk '/Process ID/{print $3; exit}')
 check "the shell came back" "true" "$([[ -n $SHELL_PID ]] && echo true || echo false)"
-check "and the values survived the restart" "48|1.25|center" \
-  "$(ipc status | live speed)|$(ipc status | live maxZoom)|$(ipc status | live drift)"
+check "and the values survived the restart" "48|1.25|center|True|True" \
+  "$(ipc status | live speed)|$(ipc status | live maxZoom)|$(ipc status | live drift)|$(ipc status | live wander)|$(ipc status | live advance)"
 
 echo "-- reset"
 ipc reset >/dev/null

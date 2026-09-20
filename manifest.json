@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "io.github.gsusgit.kenburnswallpaper",
   "name": "Ken Burns Wallpaper",
-  "version": "4.1.0",
+  "version": "5.0.0",
   "author": "gsusgit",
   "license": "MIT",
-  "description": "A Ken Burns loop on the current Omarchy wallpaper: the image itself zooms and drifts, very slowly. Nothing is painted on top of it.",
+  "description": "Your wallpaper slowly zooms and drifts, like a documentary still.",
   "kinds": ["service", "bar-widget"],
   "entryPoints": {
     "service": "Service.qml",
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Ken Burns Wallpaper",
-    "description": "A bar button with a settings panel: switch the animation on or off, and set the speed, the zoom, and which way the image drifts.",
+    "description": "A bar button with a settings panel: on/off, speed, zoom, drift, vary-each-loop, and advance.",
     "category": "Appearance",
     "allowMultiple": false,
     "defaultSection": "right",
