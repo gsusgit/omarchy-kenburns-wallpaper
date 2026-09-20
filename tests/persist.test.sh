@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/kenburnswallpaper.json"
-DEFAULT='{"enabled":true,"speed":40,"maxZoom":1.15,"drift":"center"}'
+DEFAULT='{"enabled":true,"speed":35,"maxZoom":1.15,"drift":"center"}'
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -95,23 +95,23 @@ check "driftLength is not in the file" "keyerror" "$(disk driftLength 2>&1 | gre
 check "the old duration key is not in the file" "keyerror" "$(disk duration 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 
 echo "-- writing each key through IPC"
-ipc setSpeed 40 >/dev/null
-wait_for_disk "d['speed'] == 40" 6 && check "speed reached the settings file" "40" "$(disk speed)" \
-  || check "speed reached the settings file" "40" "timeout"
+ipc setSpeed 35 >/dev/null
+wait_for_disk "d['speed'] == 35" 6 && check "speed reached the settings file" "35" "$(disk speed)" \
+  || check "speed reached the settings file" "35" "timeout"
 sleep 2
-check "and the engine applied it" "40" "$(ipc status | live speed)"
+check "and the engine applied it" "35" "$(ipc status | live speed)"
 
-ipc setSpeed 45 >/dev/null                # between two levels: a tie, which goes up
-wait_for_disk "d['speed'] == 50" 6 && check "a speed between levels snaps to the nearest" "50" "$(disk speed)" \
-  || check "a speed between levels snaps to the nearest" "50" "timeout"
+ipc setSpeed 41.5 >/dev/null              # between two levels: a tie, which goes up
+wait_for_disk "d['speed'] == 48" 6 && check "a speed between levels snaps to the nearest" "48" "$(disk speed)" \
+  || check "a speed between levels snaps to the nearest" "48" "timeout"
 
 ipc setSpeed 500 >/dev/null               # far above the top level
 wait_for_disk "d['speed'] == 60" 6 && check "speed is clamped to the top level" "60" "$(disk speed)" \
   || check "speed is clamped to the top level" "60" "timeout"
 
 ipc setSpeed 1 >/dev/null                 # far below the bottom level
-wait_for_disk "d['speed'] == 20" 6 && check "speed is clamped to the bottom level" "20" "$(disk speed)" \
-  || check "speed is clamped to the bottom level" "20" "timeout"
+wait_for_disk "d['speed'] == 10" 6 && check "speed is clamped to the bottom level" "10" "$(disk speed)" \
+  || check "speed is clamped to the bottom level" "10" "timeout"
 
 ipc setMaxZoom 9 >/dev/null             # far above the 1.30 cap
 wait_for_disk "d['maxZoom'] == 1.3" 6 && check "maxZoom is clamped to the 1.30 cap" "1.3" "$(disk maxZoom)" \
@@ -125,19 +125,19 @@ ipc setDrift sideways >/dev/null
 wait_for_disk "d['drift'] == 'center'" 6 && check "an unknown drift falls back to centre" "center" "$(disk drift)" \
   || check "an unknown drift falls back to centre" "center" "timeout"
 
-ipc setSpeed 50 >/dev/null
+ipc setSpeed 48 >/dev/null
 ipc setMaxZoom 1.25 >/dev/null
 wait_for_disk "d['maxZoom'] == 1.25" 6
 
 echo "-- surviving a restart (the acceptance criterion)"
 sleep 2
-check "the values are in place before the restart" "50|1.25|center" \
+check "the values are in place before the restart" "48|1.25|center" \
   "$(disk speed)|$(disk maxZoom)|$(disk drift)"
 omarchy-restart-shell >/dev/null 2>&1
 sleep 10
 SHELL_PID=$(qs list --all | awk '/Process ID/{print $3; exit}')
 check "the shell came back" "true" "$([[ -n $SHELL_PID ]] && echo true || echo false)"
-check "and the values survived the restart" "50|1.25|center" \
+check "and the values survived the restart" "48|1.25|center" \
   "$(ipc status | live speed)|$(ipc status | live maxZoom)|$(ipc status | live drift)"
 
 echo "-- reset"

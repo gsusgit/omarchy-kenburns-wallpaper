@@ -6,12 +6,11 @@ import "Settings.js" as Settings
 
 // The settings panel behind the bar button.
 //
-// The panel edits a LOCAL DRAFT: nothing reaches the service (so nothing
-// animates differently, and nothing is written to disk) until Apply is pressed.
-// That is what makes "unsaved changes" a real, visible state instead of a hope,
-// and it means a slider drag can never leave a half-chosen value behind.
+// Every control writes through the service immediately: the four values are
+// discrete, so there is no half-chosen slider to park behind Apply. Closing
+// the panel does not throw anything away because there is nothing unsaved.
 //
-// Deliberately small. Four values, two of them sliders, and every control
+// Deliberately small. Four values, two of them steppers, and every control
 // changes something you can see. Removed after living with them: the preset
 // dropdown (a shortcut through these values, not an effect of its own), the
 // handheld shake and the breathing loop (both read as the wallpaper misbehaving
@@ -34,9 +33,9 @@ Panel {
   readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
   readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
 
-  // ------------------------------------------------------------------- draft
+  // Mirror of the service config, so the controls have a stable object to bind
+  // even before the service is injected.
   property var draft: Settings.sanitize({})
-  property bool dirty: false
 
   // Which level each level-based control is on. The steppers' buttons and their
   // sliders both read these, so neither can disagree with the value applied.
@@ -46,35 +45,27 @@ Panel {
   readonly property int zoomIndex: Settings.maxZoomLevelIndex(root.draft.maxZoom)
   readonly property int speedIndex: Settings.speedLevelIndex(root.draft.speed)
 
-  // Compare canonically: two configs that differ only in key order or in a
-  // numeric type are the same settings, and should not light up "unsaved".
-  function matchesApplied() {
-    if (!root.service) return true
-    return Settings.serialise(root.draft) === Settings.serialise(root.service.config)
-  }
-
   function loadDraft() {
     root.draft = Settings.sanitize(root.service ? root.service.config : {})
-    root.dirty = false
+  }
+
+  function commit(next) {
+    if (!root.service) return
+    var clean = Settings.sanitize(next)
+    if (Settings.serialise(clean) === Settings.serialise(root.service.config)) return
+    root.service.config = clean
+    root.service.save()
   }
 
   function editAll(next) {
-    root.draft = Settings.sanitize(next)
-    root.dirty = !root.matchesApplied()
+    root.commit(next)
   }
 
   function edit(key, value) {
     var next = {}
     for (var k in root.draft) next[k] = root.draft[k]
     next[key] = value
-    root.editAll(next)
-  }
-
-  function apply() {
-    if (!root.service) return
-    root.service.config = root.draft
-    root.service.save()
-    root.dirty = false
+    root.commit(next)
   }
 
   function open() {
@@ -91,21 +82,12 @@ Panel {
     return false
   }
 
-  // The draft starts from whatever is applied, and follows the service only
-  // while there is nothing unsaved to lose -- so an external change (IPC, a hand
-  // edit of the settings file) shows up in the panel, and unsaved edits survive
-  // closing and reopening the panel instead of being silently thrown away.
-  function syncFromService() {
-    if (root.dirty) return
-    root.loadDraft()
-  }
-
-  onServiceChanged: root.syncFromService()
+  onServiceChanged: root.loadDraft()
   Component.onCompleted: root.loadDraft()
 
   Connections {
     target: root.service
-    function onConfigChanged() { root.syncFromService() }
+    function onConfigChanged() { root.loadDraft() }
   }
 
   KeyboardPanel {
@@ -147,8 +129,6 @@ Panel {
             elide: Text.ElideRight
           }
 
-          // Loads the defaults into the panel only. Apply is still required, so
-          // this is undoable by reopening the panel.
           PanelActionButton {
             id: resetBtn
             anchors.verticalCenter: parent.verticalCenter
@@ -171,18 +151,6 @@ Panel {
               fontFamily: root.fontFamily
             }
           }
-        }
-
-        // The panel's whole "you have not applied this yet" signal, alongside
-        // the Apply button lighting up.
-        Text {
-          width: parent.width
-          visible: root.dirty
-          text: "\u25cf Unsaved changes"
-          color: Color.accent
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.bodySmall
-          font.bold: true
         }
 
         PanelSeparator { foreground: root.barForeground }
@@ -336,28 +304,6 @@ Panel {
               onClicked: root.edit("drift", modelData.value)
             }
           }
-        }
-
-        PanelSeparator { foreground: root.barForeground }
-
-        // ------------------------------------------------------ apply
-        Button {
-          id: applyBtn
-          width: parent.width
-          text: root.dirty ? "Apply changes" : "Apply"
-          fontFamily: root.fontFamily
-          // Deliberately NOT `selected`: this theme sets the selected-color
-          // token to #f6dcac, which is its foreground too, so a selected button
-          // reads as ordinary text on a faint wash. Driving the label and the
-          // fill from Color.accent (#faa968 here) makes the button the same
-          // orange as the "Unsaved changes" dot above it, so the two signals
-          // say the same thing at a glance.
-          foreground: root.dirty ? Color.accent : root.barForeground
-          accent: Color.accent
-          background: root.dirty ? Style.selectedAccentFill : "transparent"
-          bordered: true
-          opacity: root.dirty ? 1 : 0.6
-          onClicked: root.apply()
         }
       }
     }

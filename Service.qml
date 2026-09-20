@@ -66,11 +66,11 @@ Item {
   // Writing goes through a Process, not through FileView.setText.
   //
   // Measured behaviour of the FileView route: once the file has been modified
-  // externally, the view stops persisting writes entirely -- an Apply right after
+  // externally, the view stops persisting writes entirely -- a save right after
   // any external edit never lands, whatever the delay (tested up to 4 s), the
   // on-disk file keeps the stale content, and nothing is logged because
-  // printErrors is off. That is the "I pressed Apply and it did nothing" failure,
-  // and it is silent. A one-shot writer is boring and always works.
+  // printErrors is off. That is a silent "I changed a control and it did
+  // nothing". A one-shot writer is boring and always works.
   //
   // The JSON travels as an argv entry (Quickshell passes `command` as a real
   // argv, so quotes and braces are safe), and the write is atomic: temp file in

@@ -17,7 +17,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/kenburnswallpaper.json"
-DEFAULT='{"enabled":true,"speed":40.0,"maxZoom":1.15,"drift":"center"}'
+DEFAULT='{"enabled":true,"speed":35.0,"maxZoom":1.15,"drift":"center"}'
 # These suites write the same file the panel writes, so they put back whatever was
 # there when they started: wiping a human's settings is not a test's business.
 BACKUP="$(mktemp)"
@@ -87,15 +87,14 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
   return 1
 }
 
-# The duration is one of five levels and 20 s is the shortest, so a loop is 20 s
-# and the capture windows are whole numbers of loops plus a margin. That is the
-# price of a level-based control: this suite used to run at 5 s loops.
-scenario loop '{"enabled":true,"speed":20,"maxZoom":1.20}'  68 loop 20 1.20
-scenario ease '{"enabled":true,"speed":20,"maxZoom":1.20}'  46 ease 1.20
+# The duration is one of five levels; 23 s is the nearest short loop, so a scenario
+# is 23 s and the capture windows are whole numbers of loops plus a margin.
+scenario loop '{"enabled":true,"speed":23,"maxZoom":1.20}'  80 loop 23 1.20
+scenario ease '{"enabled":true,"speed":23,"maxZoom":1.20}'  52 ease 1.20
 # The drift is its own axis: any zoom can creep any way, including a diagonal. Its
 # length is fixed at 0.9 of the margin (see Service.qml), which is what the
 # analyser is told to expect.
-scenario driftDiag '{"enabled":true,"speed":20,"maxZoom":1.20,"drift":"upLeft"}' 46 drift -1 -1 0.9
+scenario driftDiag '{"enabled":true,"speed":23,"maxZoom":1.20,"drift":"upLeft"}' 52 drift -1 -1 0.9
 
 echo "pose tests: $scenarios scenarios, $fails failures"
 exit $(( fails > 0 ))

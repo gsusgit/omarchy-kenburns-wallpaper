@@ -18,7 +18,7 @@ run() {
   node tests/lib/run-settings.js "$1" 2>&1
 }
 
-DEFAULT='{"enabled":true,"speed":40,"maxZoom":1.15,"drift":"center"}'
+DEFAULT='{"enabled":true,"speed":35,"maxZoom":1.15,"drift":"center"}'
 
 # ---------------------------------------------------------------- the schema
 check "empty input gives the documented defaults" "$DEFAULT" "$(run 'S.sanitize({})')"
@@ -34,40 +34,39 @@ check "mode is gone" 'undefined' "$(run 'typeof S.sanitize({mode: "random"}).mod
 # ------------------------------------------------------------------ duration
 # The duration is one of five levels, not a free number, because the panel walks
 # it with a stepper and a stepper cannot represent an arbitrary value.
-check "there are five duration levels" '20,30,40,50,60' "$(run 'S.DURATION_LEVELS.join(",")')"
-check "a value between levels snaps down" '20' "$(run 'S.sanitize({speed: 22}).speed')"
-check "a value nearer the next level snaps up" '30' "$(run 'S.sanitize({speed: 26}).speed')"
-check "a tie snaps up, as documented" '50' "$(run 'S.sanitize({speed: 45}).speed')"
+check "there are five duration levels" '10,23,35,48,60' "$(run 'S.DURATION_LEVELS.join(",")')"
+check "a value between levels snaps down" '10' "$(run 'S.sanitize({speed: 16}).speed')"
+check "a value nearer the next level snaps up" '35' "$(run 'S.sanitize({speed: 30}).speed')"
+check "a tie snaps up, as documented" '48' "$(run 'S.sanitize({speed: 41.5}).speed')"
 check "a value above the top level clamps to it" '60' "$(run 'S.sanitize({speed: 500}).speed')"
-check "a value below the bottom level clamps to it" '20' "$(run 'S.sanitize({speed: 1}).speed')"
-check "a nonsense speed falls back to the default" '40' "$(run 'S.sanitize({speed: "long"}).speed')"
-check "the speed limits are the level ends" '20,60' "$(run '[S.LIMITS.speed.min,S.LIMITS.speed.max].join(",")')"
-check "every level survives sanitising" '20,30,40,50,60' \
+check "a value below the bottom level clamps to it" '10' "$(run 'S.sanitize({speed: 1}).speed')"
+check "a nonsense speed falls back to the default" '35' "$(run 'S.sanitize({speed: "long"}).speed')"
+check "the speed limits are the level ends" '10,60' "$(run '[S.LIMITS.speed.min,S.LIMITS.speed.max].join(",")')"
+check "every level survives sanitising" '10,23,35,48,60' \
   "$(run 'S.DURATION_LEVELS.map(function(d){return S.sanitize({speed: d}).speed}).join(",")')"
 # The key was `duration` until 3.4: an old file still works, and the value is
 # written back under the new name only, so the file migrates itself.
-check "the old duration key still reads as the speed" '40' "$(run 'S.sanitize({duration: 40}).speed')"
-check "the old key is snapped like the new one" '50' "$(run 'S.sanitize({duration: 45}).speed')"
-check "the new key wins if both are present" '30' "$(run 'S.sanitize({speed: 30, duration: 60}).speed')"
+check "the old duration key still reads as the speed" '35' "$(run 'S.sanitize({duration: 35}).speed')"
+check "the old key is snapped like the new one" '48' "$(run 'S.sanitize({duration: 41.5}).speed')"
+check "the new key wins if both are present" '23' "$(run 'S.sanitize({speed: 23, duration: 60}).speed')"
 check "the old key is not written back" 'false' "$(run 'S.serialise({duration: 40}).indexOf("\"duration\"") >= 0')"
-check "the level index of the bottom level is zero" '0' "$(run 'S.durationLevelIndex(20)')"
+check "the level index of the bottom level is zero" '0' "$(run 'S.durationLevelIndex(10)')"
 check "the level index of the top level is four" '4' "$(run 'S.durationLevelIndex(60)')"
-check "the level index snaps like the value does" '2' "$(run 'S.durationLevelIndex(41)')"
-# The default is the middle level, which is the middle of the slider too: the
-# speed index runs backwards, and the middle is the middle either way round.
-check "the default speed is the middle level" '40' "$(run 'S.DEFAULTS.speed')"
+check "the level index snaps like the value does" '2' "$(run 'S.durationLevelIndex(36)')"
+# The default is the middle level, which is the middle of the slider too.
+check "the default speed is the middle level" '35' "$(run 'S.DEFAULTS.speed')"
 check "which sits in the middle of the speed slider" '2' "$(run 'S.speedLevelIndex(S.DEFAULTS.speed)')"
 check "an unreadable value indexes as the default level" '2' "$(run 'S.durationLevelIndex("soon")')"
 
 # The SPEED control walks the levels backwards, because a short loop is the fast
-# one: 0 is the slowest (60 s) and the last index is the fastest (20 s).
-check "the speed index of the shortest loop is the fastest" '4' "$(run 'S.speedLevelIndex(20)')"
+# one: 0 is the slowest (60 s) and the last index is the fastest (10 s).
+check "the speed index of the shortest loop is the fastest" '4' "$(run 'S.speedLevelIndex(10)')"
 check "the speed index of the longest loop is the slowest" '0' "$(run 'S.speedLevelIndex(60)')"
 check "the slowest speed is the longest duration" '60' "$(run 'S.durationForSpeedIndex(0)')"
-check "the fastest speed is the shortest duration" '20' "$(run 'S.durationForSpeedIndex(4)')"
-check "a speed index above the range clamps to the fastest" '20' "$(run 'S.durationForSpeedIndex(9)')"
+check "the fastest speed is the shortest duration" '10' "$(run 'S.durationForSpeedIndex(4)')"
+check "a speed index above the range clamps to the fastest" '10' "$(run 'S.durationForSpeedIndex(9)')"
 check "a speed index below the range clamps to the slowest" '60' "$(run 'S.durationForSpeedIndex(-3)')"
-check "a nonsense speed index falls back to the default" '40' "$(run 'S.durationForSpeedIndex("quick")')"
+check "a nonsense speed index falls back to the default" '35' "$(run 'S.durationForSpeedIndex("quick")')"
 check "speed and duration round-trip through every level" 'true' \
   "$(run 'S.DURATION_LEVELS.every(function(d){return S.durationForSpeedIndex(S.speedLevelIndex(d)) === d})')"
 check "one step of speed is one level shorter" 'true' \
@@ -101,11 +100,11 @@ check "boolean strings are read" 'true' "$(run 'S.bool("true", false)')"
 check "false strings are read" 'false' "$(run 'S.bool("false", true)')"
 check "a number is not a boolean" 'true' "$(run 'S.bool(1, true)')"
 check "unreadable enabled keeps its default" 'true' "$(run 'S.sanitize({enabled: "yes"}).enabled')"
-check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, speed: 40})')"
+check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, speed: 35})')"
 check "garbage text parses to the defaults" "$DEFAULT" "$(run 'S.parse("not json at all")')"
 check "null parses to the defaults" "$DEFAULT" "$(run 'S.parse(null)')"
-check "an old v2 file keeps only what still exists" '{"enabled":true,"speed":40,"maxZoom":1.25,"drift":"center"}' \
-  "$(run 'S.sanitize({preset: "custom", enabled: true, duration: 42, maxZoom: 1.25, direction: "out", smoothEasing: true, handheld: true, breathing: true})')"
+check "an old v2 file keeps only what still exists" '{"enabled":true,"speed":35,"maxZoom":1.25,"drift":"center"}' \
+  "$(run 'S.sanitize({preset: "custom", enabled: true, duration: 35, maxZoom: 1.25, direction: "out", smoothEasing: true, handheld: true, breathing: true})')"
 
 # ------------------------------------------------------------------- drift
 check "the drift defaults to centre" 'center' "$(run 'S.sanitize({}).drift')"
@@ -133,17 +132,17 @@ check "an old file's driftLength is dropped" 'false' "$(run 'Object.keys(S.sanit
 check "there are no driftLength limits left" 'undefined' "$(run 'typeof S.LIMITS.driftLength')"
 
 # --------------------------------------------------------------- serialising
-check "serialise round-trips canonically" '{"enabled":true,"speed":30,"maxZoom":1.25,"drift":"upLeft"}' \
-  "$(run 'JSON.parse(S.serialise({speed: 30, maxZoom: 1.25, drift: "upLeft"}))')"
+check "serialise round-trips canonically" '{"enabled":true,"speed":23,"maxZoom":1.25,"drift":"upLeft"}' \
+  "$(run 'JSON.parse(S.serialise({speed: 23, maxZoom: 1.25, drift: "upLeft"}))')"
 check "serialise never writes a removed key" 'false' \
   "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode","direction","driftLength","duration"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
 
 # The panel's unsaved-changes flag is `serialise(draft) != serialise(applied)`,
 # so equality has to be canonical or the warning lights up on an untouched panel.
-check "equal configs compare equal" 'true' "$(run 'S.serialise({speed: 40}) === S.serialise(S.DEFAULTS)')"
-check "a numeric string is not a change" 'true' "$(run 'S.serialise({speed: "20"}) === S.serialise({speed: 20})')"
-check "key order is not a change" 'true' "$(run 'S.serialise({drift: "up", speed: 30}) === S.serialise({speed: 30, drift: "up"})')"
-check "a real change is detected" 'false' "$(run 'S.serialise({speed: 30}) === S.serialise({speed: 20})')"
+check "equal configs compare equal" 'true' "$(run 'S.serialise({speed: 35}) === S.serialise(S.DEFAULTS)')"
+check "a numeric string is not a change" 'true' "$(run 'S.serialise({speed: "23"}) === S.serialise({speed: 23})')"
+check "key order is not a change" 'true' "$(run 'S.serialise({drift: "up", speed: 23}) === S.serialise({speed: 23, drift: "up"})')"
+check "a real change is detected" 'false' "$(run 'S.serialise({speed: 35}) === S.serialise({speed: 23})')"
 check "flipping the drift is a change" 'false' "$(run 'S.serialise({drift: "left"}) === S.serialise({drift: "right"})')"
 
 # -------------------------------------------------------------- level sliders

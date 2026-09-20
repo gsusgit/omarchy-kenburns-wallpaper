@@ -78,21 +78,21 @@ function driftVector(value) {
 
 var DEFAULTS = {
   enabled: true,
-  speed: 40.0,
+  speed: 35.0,
   maxZoom: 1.15,
   drift: "center"
 }
 
 // The key is `speed` -- that is what the panel calls it -- and its value is the
-// loop PERIOD in seconds, so a smaller number is faster. The five levels below are
-// therefore periods too, and the helpers keep the honest name: DURATION_LEVELS are
-// the periods, and the panel addresses them through a speed index that runs the
-// other way (see speedLevelIndex).
-var DURATION_LEVELS = [20, 30, 40, 50, 60]
+// loop PERIOD in seconds, so a smaller number is faster. Five levels, evenly
+// spaced from the extra-fast end (10 s) to the calm end (60 s). The panel
+// addresses them through a speed index that runs the other way (see
+// speedLevelIndex). Zoom stays five even 0.05 steps, capped at 1.30.
+var DURATION_LEVELS = [10, 23, 35, 48, 60]
 
-// The zoom's five levels. They end at 1.30 on purpose: that is the hard cap, above
-// which the copy shows its own pixels instead of the wallpaper's, and 1.15 -- the
-// default -- is one of them.
+// The zoom's five levels. They end at 1.30 on purpose: that is the hard cap,
+// above which the copy shows its own pixels instead of the wallpaper's, and
+// 1.15 -- the default -- is one of them.
 var MAXZOOM_LEVELS = [1.10, 1.15, 1.20, 1.25, 1.30]
 
 var LIMITS = {

@@ -67,14 +67,14 @@ can reinstall without losing your levels.
 Settings live **outside** the plugin folder, at
 `~/.config/omarchy/kenburnswallpaper.json`. The shell reloads a plugin whenever
 anything inside its directory changes; writing settings there would unmap the
-panel on every Apply.
+panel on every save.
 
 The file is created with defaults on first run:
 
 ```json
 {
   "enabled": true,
-  "speed": 40,
+  "speed": 35,
   "maxZoom": 1.15,
   "drift": "center"
 }
@@ -83,18 +83,18 @@ The file is created with defaults on first run:
 | Key | Default | Range | Meaning |
 |---|---|---|---|
 | `enabled` | `true` | boolean | Freeze the clock; the wallpaper stays painted |
-| `speed` | `40` | 20, 30, 40, 50, 60 | Seconds per full loop (smaller is faster) |
+| `speed` | `35` | 10, 23, 35, 48, 60 | Seconds per full loop (smaller is faster) |
 | `maxZoom` | `1.15` | 1.10, 1.15, 1.20, 1.25, 1.30 | How far the zoom opens |
 | `drift` | `center` | `center`, `left`, `right`, `up`, `down`, `upLeft`, `upRight`, `downLeft`, `downRight` | Which way the image creeps while zoomed |
 
 Hand-edited or out-of-range values are snapped to the nearest level. Unknown keys
-are dropped. The panel edits a local draft; nothing is written until **Apply**.
+are dropped. The panel writes through immediately: there is no Apply step.
 
 The same values are reachable from a terminal:
 
 ```sh
 qs ipc call kenburnswallpaper status
-qs ipc call kenburnswallpaper setSpeed 50
+qs ipc call kenburnswallpaper setSpeed 48
 qs ipc call kenburnswallpaper setMaxZoom 1.20
 qs ipc call kenburnswallpaper setDrift upLeft
 qs ipc call kenburnswallpaper setEnabled false
@@ -118,7 +118,7 @@ Hover the bar icon for `Ken Burns - ON` or `Ken Burns - OFF`.
 
 ## Releases
 
-Tagged GitHub releases match `version` in `manifest.json`. This tree is **v4.0.0**:
+Tagged GitHub releases match `version` in `manifest.json`. This tree is **v4.1.0**:
 the plugin id, install folder, settings path, and IPC target are
 `io.github.gsusgit.kenburnswallpaper` / `kenburnswallpaper`.
 

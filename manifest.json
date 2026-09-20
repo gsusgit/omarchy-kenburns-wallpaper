@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.gsusgit.kenburnswallpaper",
   "name": "Ken Burns Wallpaper",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "author": "gsusgit",
   "license": "MIT",
   "description": "A Ken Burns loop on the current Omarchy wallpaper: the image itself zooms and drifts, very slowly. Nothing is painted on top of it.",
