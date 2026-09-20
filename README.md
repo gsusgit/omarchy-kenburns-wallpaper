@@ -5,10 +5,6 @@ current wallpaper: the image itself zooms and drifts.
 
 ![Ken Burns](preview.png)
 
-The loop on the current wallpaper:
-
-![Ken Burns Wallpaper](docs/demo.gif)
-
 ## Features
 
 - Cosine zoom from 1× out to a chosen maximum and back, with no stop and no jump
