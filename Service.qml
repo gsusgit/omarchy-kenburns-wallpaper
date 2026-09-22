@@ -5,10 +5,9 @@ import Quickshell.Io
 import Quickshell.Services.UPower
 import Quickshell.Wayland
 import QtQuick.Effects
-import QtQuick.Shapes
 import qs.Commons
 import qs.Ui
-import "Settings.js" as Settings
+import "KenBurnsSettings.js" as Settings
 
 // Ken Burns Wallpaper.
 //
@@ -39,7 +38,7 @@ Item {
   // Frame budget is not user-configurable. On AC it stays at ~14 fps; on
   // battery it drops to ~8 fps, which is still smooth for a 10–60 s traverse.
   readonly property int frameMs: UPower.onBattery ? 125 : 70
-  readonly property int revealMs: 420
+  readonly property int revealMs: 1400
   readonly property int traceMs: 150           // pose trace interval (tests read it)
   readonly property int traceWindowMs: 90000   // trace is bounded: no line-per-second forever
   readonly property string screensaverClass: "org.omarchy.screensaver"
@@ -126,6 +125,29 @@ Item {
     root.config = Settings.sanitize(next)
   }
 
+  // Keep in sync with defaults.json (checked in tests/settings.test.sh).
+  // Literal assignment + direct JSON write: a stale Settings.js cache cannot
+  // turn switches off again when save() would have re-sanitised through it.
+  function resetDefaults() {
+    var next = {
+      enabled: true,
+      speed: 48,
+      maxZoom: 1.2,
+      drift: "center",
+      wander: true,
+      advance: true,
+      trail: true,
+      trailLag: 0.03
+    }
+    root.liveDrift = next.drift
+    root.liveDriftLocked = false
+    root.snapPanToLive()
+    root.config = next
+    root.pendingWrite = JSON.stringify(next, null, 2) + "\n"
+    settingsWriter.running = false
+    settingsWriter.running = true
+  }
+
   function snapPanToLive() {
     var v = Settings.driftVector(root.liveDrift)
     root.panX = v[0] * root.driftLength
@@ -184,16 +206,15 @@ Item {
     function setDrift(value: string): void { root.applyIpc("drift", value) }
     function setWander(value: string): void { root.applyIpc("wander", value) }
     function setAdvance(value: string): void { root.applyIpc("advance", value) }
+    function setTrail(value: string): void { root.applyIpc("trail", value) }
+    function setTrailLag(value: string): void { root.applyIpc("trailLag", value) }
 
     function reset(): void {
+      root.resetDefaults()
       root.clock = 0
       root.lastTickMs = 0
       root.lastLoopIndex = 0
-      root.liveDrift = Settings.DEFAULTS.drift
-      root.liveDriftLocked = false
-      root.snapPanToLive()
-      root.config = Settings.sanitize({})
-      root.save()
+      root.advanceArmedForLoop = -1
     }
 
     function status(): string {
@@ -292,18 +313,33 @@ Item {
   readonly property real segment: Math.max(0, Math.min(1, (clock % cycleMs) / cycleMs))
 
   // 0 -> 1 -> 0 across one period, cosine-eased at both ends.
-  function cosineWave(periodMs) {
-    return 0.5 - 0.5 * Math.cos(2 * Math.PI * (root.clock % periodMs) / periodMs)
+  function cosineWave(periodMs, t) {
+    var when = (t === undefined) ? root.clock : t
+    return 0.5 - 0.5 * Math.cos(2 * Math.PI * (when % periodMs) / periodMs)
   }
 
   readonly property real progress: root.cosineWave(cycleMs)
 
   function mix(a, b, t) { return a + (b - a) * t }
 
+  function zoomAt(t) {
+    return mix(1, config.maxZoom, root.cosineWave(cycleMs, Math.max(0, t)))
+  }
+
+  function panOffsetXAt(t) {
+    var z = zoomAt(t)
+    return panX * (z - 1) / 2
+  }
+
+  function panOffsetYAt(t) {
+    var z = zoomAt(t)
+    return panY * (z - 1) / 2
+  }
+
   // The loop always runs 1 -> maxZoom -> 1, so it starts and ends on the whole
   // image: no zoom-direction setting could change anything but the pose you land
   // on when the config is applied.
-  readonly property real zoom: mix(1, config.maxZoom, progress)
+  readonly property real zoom: zoomAt(root.clock)
 
   // ------------------------------------------------------------------- drift
   // Which way the image creeps while the zoom opens: an axis of its own, so any
@@ -333,8 +369,6 @@ Item {
       root.liveDrift = Settings.pickWanderDrift(root.liveDrift)
       root.liveDriftLocked = true
     }
-    if (root.config.advance)
-      root.requestAdvance()
   }
 
   // ------------------------------------------------------- pause when unseen
@@ -460,12 +494,13 @@ Item {
       var now = Date.now()
       if (root.lastTickMs > 0) root.clock += (now - root.lastTickMs)
       root.lastTickMs = now
+      root.maybeAdvanceEarly()
     }
   }
 
   // ------------------------------------------------------- wallpaper state
   property string displayPath: ""     // what is on screen right now
-  property string incomingPath: ""    // what the reveal is wiping in
+  property string incomingPath: ""    // what the fade is blending in
   property real revealProgress: 1
 
   function refresh() {
@@ -484,19 +519,30 @@ Item {
     root.displayPath = root.incomingPath
     root.incomingPath = ""
     root.revealProgress = 1
-    root.clock = 0          // a new image starts a fresh Ken Burns move
-    root.lastTickMs = 0
-    root.lastLoopIndex = 0
-    root.snapPanToLive()
+    // Keep the Ken Burns pose: the incoming image already shared the same
+    // zoom and pan during the fade, so restarting the clock would snap back
+    // to zoom 1 and break the cinematic handoff.
   }
 
   function imageUrl(path) {
     return path ? Util.fileUrl(path) : ""
   }
 
-  function requestAdvance() {
+  // Ask for the next wallpaper before the loop seam, so the file is decoded
+  // and the crossfade is already running while the move is still going. Firing
+  // at the seam left a stall: the cosine is stopped there, and the next image
+  // only arrived after Omarchy and the decoder had finished.
+  property int advanceArmedForLoop: -1
+
+  function maybeAdvanceEarly() {
+    if (!root.config.advance) return
+    if (root.advanceArmedForLoop === root.loopIndex) return
     if (root.revealProgress < 1 || root.incomingPath !== "") return
     if (advanceProc.running) return
+    var lead = root.revealMs + 700
+    var intoLoop = root.clock % root.cycleMs
+    if (root.cycleMs - intoLoop > lead) return
+    root.advanceArmedForLoop = root.loopIndex
     advanceProc.running = true
   }
 
@@ -522,8 +568,8 @@ Item {
         }
         root.incomingPath = path
         root.revealProgress = 0
-        // The reveal itself waits until the incoming image is Ready
-        // (startReveal), so we never wipe in an empty frame. This timer is the
+        // The fade itself waits until the incoming image is Ready (startReveal),
+        // so we never blend in an empty frame. This timer is the
         // belt and braces: a corrupt image must not leave a stale wallpaper on
         // screen for ever.
         revealFallback.restart()
@@ -626,55 +672,50 @@ Item {
       readonly property int decodeH: Math.ceil(Math.max(1, win.height) * root.config.maxZoom)
 
       // ------------------------------------------------------- wallpaper
-      // One scaled layer: the surface clips whatever leaves the screen, which is
-      // what makes a zoom read as a zoom. Scaling is anchored at the centre, so
-      // the visible crop stays on the middle of the image.
+      // Sharp pose first, then lagged copies on top. Each pose is its own item
+      // so the trail can sit where the image was a moment ago.
       Item {
-        id: zoomLayer
+        id: wallpaperStack
         width: win.width
         height: win.height
-        // Drift first, zoom second, on one item: the offset moves the layer in
-        // the parent's coordinates and the scale is about the layer's own centre,
-        // which composes to the same thing as panning the scaled image -- so this
-        // needs no second layer.
-        x: root.panOffsetX * win.width
-        y: root.panOffsetY * win.height
-        scale: root.zoom
-        transformOrigin: Item.Center
 
-        Image {
-          id: baseImage
-          anchors.fill: parent
-          source: root.imageUrl(root.displayPath)
-          fillMode: Image.PreserveAspectCrop
-          asynchronous: true
-          cache: true
-          smooth: true
-          mipmap: false
-          sourceSize.width: win.decodeW
-          sourceSize.height: win.decodeH
-          // Never paint an empty frame: while our copy is not ready,
-          // Omarchy's own wallpaper underneath shows through.
-          opacity: status === Image.Ready ? 1 : 0
-        }
+        readonly property bool trailActive: root.config.trail === true
+                     && baseImage.status === Image.Ready
+                     && root.revealProgress >= 1
+                     && root.incomingPath === ""
+        readonly property real trailLagMs: root.cycleMs * root.config.trailLag
 
         Item {
-          id: incomingLayer
-          anchors.fill: parent
-          visible: root.incomingPath !== "" && root.revealProgress < 1
-                   && incomingImage.status === Image.Ready
-          layer.enabled: visible
-          layer.smooth: true
-          layer.effect: MultiEffect {
-            maskEnabled: true
-            maskSource: revealMask
-            maskThresholdMin: 0.5
-            maskSpreadAtMin: 0.02
+          id: sharpLayer
+          width: parent.width
+          height: parent.height
+          x: root.panOffsetX * width
+          y: root.panOffsetY * height
+          scale: root.zoom
+          transformOrigin: Item.Center
+
+          Image {
+            id: baseImage
+            anchors.fill: parent
+            source: root.imageUrl(root.displayPath)
+            fillMode: Image.PreserveAspectCrop
+            asynchronous: true
+            cache: true
+            smooth: true
+            mipmap: false
+            sourceSize.width: win.decodeW
+            sourceSize.height: win.decodeH
+            opacity: status !== Image.Ready ? 0
+                     : (incomingImage.fading ? (1 - root.revealProgress) : 1)
           }
 
           Image {
             id: incomingImage
+            readonly property bool fading: root.incomingPath !== ""
+                     && root.revealProgress < 1
+                     && status === Image.Ready
             anchors.fill: parent
+            visible: fading
             source: root.imageUrl(root.incomingPath)
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
@@ -683,38 +724,78 @@ Item {
             mipmap: false
             sourceSize.width: win.decodeW
             sourceSize.height: win.decodeH
+            opacity: root.revealProgress
             onStatusChanged: if (status === Image.Ready) root.startReveal()
           }
         }
 
-        // The same slanted reveal Omarchy's stock background uses (slant
-        // -0.18), so a theme switch still arrives looking the way it always
-        // did -- it just also breathes now.
+        // Farther ghost: twice the lag, softer and more blurred.
         Item {
-          id: revealMask
-          anchors.fill: parent
-          visible: false
-          layer.enabled: true
+          id: trailFar
+          visible: wallpaperStack.trailActive
+          width: parent.width
+          height: parent.height
+          x: root.panOffsetXAt(root.clock - wallpaperStack.trailLagMs * 2) * width
+          y: root.panOffsetYAt(root.clock - wallpaperStack.trailLagMs * 2) * height
+          scale: root.zoomAt(root.clock - wallpaperStack.trailLagMs * 2)
+          transformOrigin: Item.Center
+          opacity: 0.18
 
-          readonly property real slant: -0.18
-          readonly property real centerTop: width / 2 - slant * height / 2
-          readonly property real centerBottom: width / 2 + slant * height / 2
-          readonly property real reach: width / 2 + Math.abs(slant) * height / 2 + 4
-          readonly property real spread: reach * root.revealProgress
-
-          Shape {
+          Image {
+            id: trailFarImage
             anchors.fill: parent
-            antialiasing: true
-            preferredRendererType: Shape.CurveRenderer
-            ShapePath {
-              fillColor: "white"
-              strokeColor: "transparent"
-              startX: revealMask.centerTop - revealMask.spread; startY: 0
-              PathLine { x: revealMask.centerTop + revealMask.spread; y: 0 }
-              PathLine { x: revealMask.centerBottom + revealMask.spread; y: revealMask.height }
-              PathLine { x: revealMask.centerBottom - revealMask.spread; y: revealMask.height }
-              PathLine { x: revealMask.centerTop - revealMask.spread; y: 0 }
-            }
+            source: baseImage.source
+            fillMode: Image.PreserveAspectCrop
+            smooth: true
+            mipmap: false
+            sourceSize.width: win.decodeW
+            sourceSize.height: win.decodeH
+            visible: false
+          }
+
+          MultiEffect {
+            anchors.fill: parent
+            source: trailFarImage
+            autoPaddingEnabled: false
+            blurEnabled: true
+            blur: 1.0
+            blurMax: 14
+            blurMultiplier: 0
+          }
+        }
+
+        // Nearer ghost: one lag step behind the sharp pose.
+        Item {
+          id: trailNear
+          visible: wallpaperStack.trailActive
+          width: parent.width
+          height: parent.height
+          x: root.panOffsetXAt(root.clock - wallpaperStack.trailLagMs) * width
+          y: root.panOffsetYAt(root.clock - wallpaperStack.trailLagMs) * height
+          scale: root.zoomAt(root.clock - wallpaperStack.trailLagMs)
+          transformOrigin: Item.Center
+          opacity: 0.28
+
+          Image {
+            id: trailNearImage
+            anchors.fill: parent
+            source: baseImage.source
+            fillMode: Image.PreserveAspectCrop
+            smooth: true
+            mipmap: false
+            sourceSize.width: win.decodeW
+            sourceSize.height: win.decodeH
+            visible: false
+          }
+
+          MultiEffect {
+            anchors.fill: parent
+            source: trailNearImage
+            autoPaddingEnabled: false
+            blurEnabled: true
+            blur: 1.0
+            blurMax: 8
+            blurMultiplier: 0
           }
         }
       }

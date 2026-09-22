@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.gsusgit.kenburnswallpaper",
   "name": "Ken Burns Wallpaper",
-  "version": "5.0.0",
+  "version": "5.1.0",
   "author": "gsusgit",
   "license": "MIT",
   "description": "Your wallpaper slowly zooms and drifts, like a documentary still.",
@@ -13,7 +13,7 @@
   },
   "barWidget": {
     "displayName": "Ken Burns Wallpaper",
-    "description": "A bar button with a settings panel: on/off, speed, zoom, drift, vary-each-loop, and advance.",
+    "description": "A bar button with a settings panel: on/off, speed, zoom, drift, vary-each-loop, trail, and cycle.",
     "category": "Appearance",
     "allowMultiple": false,
     "defaultSection": "right",

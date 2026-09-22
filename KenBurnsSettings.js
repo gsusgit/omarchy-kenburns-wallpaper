@@ -16,10 +16,12 @@
 // speeds the per-frame travel is about a pixel, and a colour wash fights the
 // photograph the theme already chose.
 //
-// Six values remain, and each one changes something you can see: whether it
+// Eight values remain, and each one changes something you can see: whether it
 // moves, how long the loop takes, how far it zooms, which way it drifts, whether
-// that heading changes at the loop seam, and whether a finished loop asks
-// Omarchy for the next wallpaper.
+// that heading changes at the loop seam, whether a finished loop asks Omarchy
+// for the next wallpaper, and an optional motion trail. The trail draws lagged
+// copies of the same photograph at earlier poses along the Ken Burns path, so
+// the move reads as a cinematic streak. It does not change the zoom.
 // Atmosphere was tried in v5 and dropped after living with it: a grade on top
 // of the photograph never read as room light, only as a faint pulse, so it
 // failed the same test as breathing and the v0.5 overlays.
@@ -100,11 +102,15 @@ function pickWanderDrift(current) {
 
 var DEFAULTS = {
   enabled: true,
-  speed: 35.0,
-  maxZoom: 1.15,
+  speed: 48,
+  maxZoom: 1.20,
   drift: "center",
-  wander: false,
-  advance: false
+  wander: true,
+  advance: true,
+  trail: true,
+  // Second notch: a short streak. Long enough to read, short enough that the
+  // cosine turnarounds still collapse it.
+  trailLag: 0.03
 }
 
 // The key is `speed` -- that is what the panel calls it -- and its value is the
@@ -115,9 +121,13 @@ var DEFAULTS = {
 var DURATION_LEVELS = [10, 23, 35, 48, 60]
 
 // The zoom's five levels. They end at 1.30 on purpose: that is the hard cap,
-// above which the copy shows its own pixels instead of the wallpaper's, and
-// 1.15 -- the default -- is one of them.
+// above which the copy shows its own pixels instead of the wallpaper's. The
+// default, 1.20, is the middle notch.
 var MAXZOOM_LEVELS = [1.10, 1.15, 1.20, 1.25, 1.30]
+
+// How far back along the loop the trail looks, as a fraction of one period.
+// Ordered low-to-high so the panel's minus button always means a shorter trail.
+var TRAIL_LAG_LEVELS = [0.015, 0.03, 0.045, 0.06, 0.08]
 
 var LIMITS = {
   speed: { min: DURATION_LEVELS[0], max: DURATION_LEVELS[DURATION_LEVELS.length - 1] },
@@ -179,6 +189,34 @@ function snapMaxZoom(value) { return snapToLevel(MAXZOOM_LEVELS, value, DEFAULTS
 
 function maxZoomLevelIndex(value) { return levelIndexOf(MAXZOOM_LEVELS, value, DEFAULTS.maxZoom) }
 
+function snapTrailLag(value) {
+  return snapToLevel(TRAIL_LAG_LEVELS, value, DEFAULTS.trailLag)
+}
+
+function trailLagLevelIndex(value) {
+  return levelIndexOf(TRAIL_LAG_LEVELS, value, DEFAULTS.trailLag)
+}
+
+// One release carried `overlay` / `overlayOpacity` instead of trail. Read them
+// once so an existing file keeps its on/off state and slider position, then
+// write back under the new names only.
+var OVERLAY_LEGACY_LEVELS = [0.5, 0.6, 0.7, 0.8, 0.9]
+
+function readTrail(input) {
+  if (input.trail !== undefined) return bool(input.trail, DEFAULTS.trail)
+  if (input.overlay !== undefined) return bool(input.overlay, DEFAULTS.trail)
+  return DEFAULTS.trail
+}
+
+function readTrailLag(input) {
+  if (input.trailLag !== undefined) return snapTrailLag(input.trailLag)
+  if (input.overlayOpacity !== undefined) {
+    var idx = levelIndexOf(OVERLAY_LEGACY_LEVELS, input.overlayOpacity, 0.9)
+    return TRAIL_LAG_LEVELS[Math.min(idx, TRAIL_LAG_LEVELS.length - 1)]
+  }
+  return DEFAULTS.trailLag
+}
+
 function number(value, min, max, fallback) {
   var n = typeof value === "number" ? value : parseFloat(value)
   if (!isFinite(n)) return fallback
@@ -215,7 +253,9 @@ function sanitize(raw) {
     maxZoom: snapMaxZoom(input.maxZoom),
     drift: normaliseDrift(input.drift),
     wander: bool(input.wander, DEFAULTS.wander),
-    advance: bool(input.advance, DEFAULTS.advance)
+    advance: bool(input.advance, DEFAULTS.advance),
+    trail: readTrail(input),
+    trailLag: readTrailLag(input)
   }
 }
 

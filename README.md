@@ -12,11 +12,13 @@ current wallpaper: the image itself zooms and drifts.
 - Optional compass drift (eight directions or stay centred) that rides on the
   zoom margin, so the image never shows a black edge.
 - Vary: pick a new heading at each seam, where the pan is already zero.
-- Optional Advance: ask Omarchy for the next wallpaper when a loop finishes.
+- Optional Cycle: ask Omarchy for the next wallpaper when a loop finishes.
+- Trail: lagged copies of the same photo, drawn on top, so the Ken Burns move leaves a cinematic streak. On by default.
 - Bar button with a settings panel. Right-click toggles the animation without
   opening the panel.
-- Follows Omarchy theme wallpaper changes with the same 420 ms slanted reveal as
-  the stock background.
+- Follows Omarchy theme wallpaper changes with a 1.4 s crossfade that starts
+  before the loop seam, so the two photos blend while the move is still going.
+  Zoom and pan carry through the handoff instead of snapping back to 1×.
 - Click-through Wayland surface on the bottom layer, so desktop clicks still
   reach the wallpaper switcher.
 - Pauses while the session is locked, a screensaver is up, or a fullscreen
@@ -52,7 +54,7 @@ Place the widget on the bar if it is not already there:
 omarchy bar put io.github.gsusgit.kenburnswallpaper --section right
 ```
 
-## Upgrading
+## Updating
 
 ```sh
 omarchy plugin update io.github.gsusgit.kenburnswallpaper
@@ -79,22 +81,30 @@ The file is created with defaults on first run:
 ```json
 {
   "enabled": true,
-  "speed": 35,
-  "maxZoom": 1.15,
+  "speed": 48,
+  "maxZoom": 1.2,
   "drift": "center",
-  "wander": false,
-  "advance": false
+  "wander": true,
+  "advance": true,
+  "trail": true,
+  "trailLag": 0.03
 }
 ```
 
 | Key | Default | Range | Meaning |
 |---|---|---|---|
 | `enabled` | `true` | boolean | Freeze the clock; the wallpaper stays painted |
-| `speed` | `35` | 10, 23, 35, 48, 60 | Seconds per full loop (smaller is faster) |
-| `maxZoom` | `1.15` | 1.10, 1.15, 1.20, 1.25, 1.30 | How far the zoom opens |
+| `speed` | `48` | 10, 23, 35, 48, 60 | Seconds per full loop (smaller is faster) |
+| `maxZoom` | `1.20` | 1.10, 1.15, 1.20, 1.25, 1.30 | How far the zoom opens |
 | `drift` | `center` | `center`, `left`, `right`, `up`, `down`, `upLeft`, `upRight`, `downLeft`, `downRight` | Which way the image creeps while zoomed |
-| `wander` | `false` | boolean | Pick a new heading at each loop seam |
-| `advance` | `false` | boolean | Next Omarchy wallpaper when a loop finishes |
+| `wander` | `true` | boolean | Pick a new heading at each loop seam (Vary in the panel) |
+| `advance` | `true` | boolean | Cycle through Omarchy wallpapers, one per finished loop |
+| `trail` | `true` | boolean | Motion trail: lagged copies on top of the sharp pose |
+| `trailLag` | `0.03` | 0.015, 0.03, 0.045, 0.06, 0.08 | How far back along the loop the streak looks, as a fraction of one period |
+
+The panel's refresh button applies the payload in `defaults.json` (also baked
+into `Service.qml` for reset), not `Settings.sanitize({})`, so a stale
+`Settings.js` cache cannot turn switches off again.
 
 Hand-edited or out-of-range values are snapped to the nearest level. Unknown keys
 are dropped. The panel writes through immediately: there is no Apply step.
@@ -110,6 +120,8 @@ qs ipc call kenburnswallpaper setMaxZoom 1.20
 qs ipc call kenburnswallpaper setDrift upLeft
 qs ipc call kenburnswallpaper setWander true
 qs ipc call kenburnswallpaper setAdvance true
+qs ipc call kenburnswallpaper setTrail true
+qs ipc call kenburnswallpaper setTrailLag 0.06
 qs ipc call kenburnswallpaper setEnabled false
 qs ipc call kenburnswallpaper reset
 ```
@@ -132,7 +144,7 @@ icon to toggle the animation.
 
 ## Releases
 
-Tagged GitHub releases match `version` in `manifest.json`. This tree is **v5.0.0**:
+Tagged GitHub releases match `version` in `manifest.json`. This tree is **v5.1.0**:
 the plugin id, install folder, settings path, and IPC target are
 `io.github.gsusgit.kenburnswallpaper` / `kenburnswallpaper`.
 

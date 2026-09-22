@@ -2,7 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
-import "Settings.js" as Settings
+import "KenBurnsSettings.js" as Settings
 
 // The settings panel behind the bar button.
 //
@@ -14,7 +14,7 @@ import "Settings.js" as Settings
 // after living with them: the preset dropdown, the handheld shake, the
 // breathing loop, the smooth-motion toggle, and Atmosphere (a grade on top
 // of the photograph that never read as light, only as a faint pulse).
-// v5 keeps Vary (a new heading at the loop seam) and Advance (next wallpaper
+// v5 keeps Vary (a new heading at the loop seam) and Cycle (next wallpaper
 // when a loop finishes).
 //
 // Animate ("enabled") lives in the header with the reset action: it is a
@@ -44,6 +44,7 @@ Panel {
   // against the loop period it writes, because a short loop is the fast one.
   readonly property int zoomIndex: Settings.maxZoomLevelIndex(root.draft.maxZoom)
   readonly property int speedIndex: Settings.speedLevelIndex(root.draft.speed)
+  readonly property int trailLagIndex: Settings.trailLagLevelIndex(root.draft.trailLag)
   property string liveHeading: ""
   readonly property string shownDrift: (root.draft.wander && root.liveHeading)
     ? root.liveHeading
@@ -143,7 +144,10 @@ Panel {
             iconText: "\uf021"                       // Font Awesome refresh
             tooltipText: "Reset to defaults"
             foreground: root.barForeground
-            onClicked: root.editAll(Settings.sanitize({}))
+            onClicked: {
+              if (root.service) root.service.resetDefaults()
+              else root.editAll(Settings.parse('{"enabled":true,"speed":48,"maxZoom":1.2,"drift":"center","wander":true,"advance":true,"trail":true,"trailLag":0.03}'))
+            }
           }
 
           ToggleSwitch {
@@ -175,12 +179,16 @@ Panel {
         // slider between them. The slider is driven by the LEVEL INDEX rather than
         // by the zoom factor, so PanelSlider's own integer rounding does the
         // snapping and a drag can never land between levels.
-        Row {
+        // Not a Row: anchoring a child inside a Row is undefined, and the slider
+        // was ending up over the buttons, so a press on +/− never reached them.
+        Item {
           width: parent.width
-          spacing: Style.spacing.sm
+          height: Math.max(zoomDownBtn.implicitHeight, zoomUpBtn.implicitHeight)
 
           PanelActionButton {
             id: zoomDownBtn
+            z: 2
+            anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             iconText: "\uf068"                       // Font Awesome minus
             tooltipText: "Less zoom"
@@ -191,7 +199,10 @@ Panel {
 
           PanelSlider {
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - zoomDownBtn.width - zoomUpBtn.width - parent.spacing * 2
+            anchors.left: zoomDownBtn.right
+            anchors.leftMargin: Style.spacing.sm
+            anchors.right: zoomUpBtn.left
+            anchors.rightMargin: Style.spacing.sm
             bar: root.bar
             minimum: 0
             maximum: Settings.MAXZOOM_LEVELS.length - 1
@@ -203,6 +214,8 @@ Panel {
 
           PanelActionButton {
             id: zoomUpBtn
+            z: 2
+            anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             iconText: "\uf067"                       // Font Awesome plus
             tooltipText: "More zoom"
@@ -232,12 +245,14 @@ Panel {
         // quick one. Writing the period from a speed index is what keeps the two
         // from contradicting each other -- the first version had a "Slower" button
         // that actually shortened the loop.
-        Row {
+        Item {
           width: parent.width
-          spacing: Style.spacing.sm
+          height: Math.max(slowerBtn.implicitHeight, fasterBtn.implicitHeight)
 
           PanelActionButton {
             id: slowerBtn
+            z: 2
+            anchors.left: parent.left
             anchors.verticalCenter: parent.verticalCenter
             iconText: "\uf068"                       // Font Awesome minus
             tooltipText: "Slower"
@@ -248,7 +263,10 @@ Panel {
 
           PanelSlider {
             anchors.verticalCenter: parent.verticalCenter
-            width: parent.width - slowerBtn.width - fasterBtn.width - parent.spacing * 2
+            anchors.left: slowerBtn.right
+            anchors.leftMargin: Style.spacing.sm
+            anchors.right: fasterBtn.left
+            anchors.rightMargin: Style.spacing.sm
             bar: root.bar
             minimum: 0
             maximum: Settings.DURATION_LEVELS.length - 1
@@ -260,6 +278,8 @@ Panel {
 
           PanelActionButton {
             id: fasterBtn
+            z: 2
+            anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
             iconText: "\uf067"                       // Font Awesome plus
             tooltipText: "Faster"
@@ -336,6 +356,86 @@ Panel {
 
         PanelSeparator { foreground: root.barForeground }
 
+        // Lagged copies of the same photograph, drawn on top of the sharp pose
+        // so the Ken Burns move leaves a streak. The image itself is the trail,
+        // so a light wallpaper stays light and a dark one stays dark.
+        Row {
+          width: parent.width
+          spacing: Style.space(8)
+
+          PanelSectionHeader {
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - trailSwitch.width - parent.spacing
+            text: "TRAIL"
+            foreground: root.barForeground
+            fontFamily: root.fontFamily
+          }
+
+          ToggleSwitch {
+            id: trailSwitch
+            anchors.verticalCenter: parent.verticalCenter
+            checked: root.draft.trail === true
+            foreground: root.barForeground
+            onToggled: root.edit("trail", !root.draft.trail)
+
+            PanelToolTip {
+              visible: trailSwitch.containsMouse
+              text: root.draft.trail
+                    ? "Motion leaves a soft streak"
+                    : "Leave a cinematic streak on the move"
+              fontFamily: root.fontFamily
+            }
+          }
+        }
+
+        Item {
+          width: parent.width
+          height: Math.max(trailDownBtn.implicitHeight, trailUpBtn.implicitHeight)
+
+          PanelActionButton {
+            id: trailDownBtn
+            z: 2
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "\uf068"
+            tooltipText: "Shorter trail"
+            foreground: root.barForeground
+            enabled: root.trailLagIndex > 0
+            onClicked: root.edit("trailLag", Settings.TRAIL_LAG_LEVELS[root.trailLagIndex - 1])
+          }
+
+          PanelSlider {
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.left: trailDownBtn.right
+            anchors.leftMargin: Style.spacing.sm
+            anchors.right: trailUpBtn.left
+            anchors.rightMargin: Style.spacing.sm
+            bar: root.bar
+            minimum: 0
+            maximum: Settings.TRAIL_LAG_LEVELS.length - 1
+            integer: true
+            tickCount: Settings.TRAIL_LAG_LEVELS.length
+            value: root.trailLagIndex
+            onMoved: function(i) {
+              root.edit("trailLag", Settings.TRAIL_LAG_LEVELS[Math.round(i)])
+            }
+          }
+
+          PanelActionButton {
+            id: trailUpBtn
+            z: 2
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            iconText: "\uf067"
+            tooltipText: "Longer trail"
+            foreground: root.barForeground
+            enabled: root.trailLagIndex < Settings.TRAIL_LAG_LEVELS.length - 1
+            onClicked: root.edit("trailLag", Settings.TRAIL_LAG_LEVELS[root.trailLagIndex + 1])
+          }
+        }
+
+        PanelSeparator { foreground: root.barForeground }
+
         Row {
           width: parent.width
           spacing: Style.space(8)
@@ -343,7 +443,7 @@ Panel {
           PanelSectionHeader {
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - advanceSwitch.width - parent.spacing
-            text: "ADVANCE"
+            text: "CYCLE"
             foreground: root.barForeground
             fontFamily: root.fontFamily
           }
@@ -357,7 +457,7 @@ Panel {
 
             PanelToolTip {
               visible: advanceSwitch.containsMouse
-              text: root.draft.advance ? "Next wallpaper each loop" : "Stay on this wallpaper"
+              text: root.draft.advance ? "Cycle wallpapers each loop" : "Stay on this wallpaper"
               fontFamily: root.fontFamily
             }
           }

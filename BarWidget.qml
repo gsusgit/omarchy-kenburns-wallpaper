@@ -57,7 +57,9 @@ BarWidget {
   Loader {
     id: panelLoader
     active: true
-    source: Qt.resolvedUrl("Menu.qml")
+    // Reload the panel when the plugin hot-reloads: KenBurnsSettings.js is a library
+    // and can stay cached, but the menu QML must not keep an old instance.
+    source: Qt.resolvedUrl("Menu.qml?v=factory-reset")
     visible: false
     onLoaded: {
       root.injectPanel()

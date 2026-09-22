@@ -17,7 +17,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/kenburnswallpaper.json"
-DEFAULT='{"enabled":true,"speed":35.0,"maxZoom":1.15,"drift":"center","wander":false,"advance":false}'
+DEFAULT='{"enabled":true,"speed":48,"maxZoom":1.2,"drift":"center","wander":true,"advance":true,"trail":true,"trailLag":0.03}'
 # These suites write the same file the panel writes, so they put back whatever was
 # there when they started: wiping a human's settings is not a test's business.
 BACKUP="$(mktemp)"

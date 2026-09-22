@@ -1,0 +1,10 @@
+{
+  "enabled": true,
+  "speed": 48,
+  "maxZoom": 1.2,
+  "drift": "center",
+  "wander": true,
+  "advance": true,
+  "trail": true,
+  "trailLag": 0.03
+}

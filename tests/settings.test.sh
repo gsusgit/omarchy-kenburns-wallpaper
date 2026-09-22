@@ -6,7 +6,7 @@
 #   ./tests/settings.test.sh
 set -uo pipefail
 cd "$(dirname "$0")/.."
-[[ -f Settings.js ]] || { echo "FAIL Settings.js not found"; exit 1; }
+[[ -f KenBurnsSettings.js ]] || { echo "FAIL KenBurnsSettings.js not found"; exit 1; }
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -18,11 +18,15 @@ run() {
   node tests/lib/run-settings.js "$1" 2>&1
 }
 
-DEFAULT='{"enabled":true,"speed":35,"maxZoom":1.15,"drift":"center","wander":false,"advance":false}'
+DEFAULT='{"enabled":true,"speed":48,"maxZoom":1.2,"drift":"center","wander":true,"advance":true,"trail":true,"trailLag":0.03}'
+FACTORY="$(python3 -c "import json;print(json.dumps(json.load(open('defaults.json')),separators=(',',':')))")"
 
 # ---------------------------------------------------------------- the schema
 check "empty input gives the documented defaults" "$DEFAULT" "$(run 'S.sanitize({})')"
-check "the schema is exactly six values" 'enabled,speed,maxZoom,drift,wander,advance' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
+check "defaults.json matches the documented defaults" "$DEFAULT" "$FACTORY"
+check "factory reset keeps wander on" 'true' \
+  "$(run 'S.parse("{\"enabled\":true,\"speed\":48,\"maxZoom\":1.2,\"drift\":\"center\",\"wander\":true,\"advance\":true,\"trail\":true,\"trailLag\":0.03}").wander')"
+check "the schema is exactly eight values" 'enabled,speed,maxZoom,drift,wander,advance,trail,trailLag' "$(run 'Object.keys(S.sanitize({a:1})).join(",")')"
 check "preset is gone" 'undefined' "$(run 'typeof S.sanitize({preset: "classicCinema"}).preset')"
 check "handheld is gone" 'undefined' "$(run 'typeof S.sanitize({handheld: true}).handheld')"
 check "breathing is gone" 'undefined' "$(run 'typeof S.sanitize({breathing: false}).breathing')"
@@ -40,7 +44,7 @@ check "a value nearer the next level snaps up" '35' "$(run 'S.sanitize({speed: 3
 check "a tie snaps up, as documented" '48' "$(run 'S.sanitize({speed: 41.5}).speed')"
 check "a value above the top level clamps to it" '60' "$(run 'S.sanitize({speed: 500}).speed')"
 check "a value below the bottom level clamps to it" '10' "$(run 'S.sanitize({speed: 1}).speed')"
-check "a nonsense speed falls back to the default" '35' "$(run 'S.sanitize({speed: "long"}).speed')"
+check "a nonsense speed falls back to the default" '48' "$(run 'S.sanitize({speed: "long"}).speed')"
 check "the speed limits are the level ends" '10,60' "$(run '[S.LIMITS.speed.min,S.LIMITS.speed.max].join(",")')"
 check "every level survives sanitising" '10,23,35,48,60' \
   "$(run 'S.DURATION_LEVELS.map(function(d){return S.sanitize({speed: d}).speed}).join(",")')"
@@ -53,10 +57,10 @@ check "the old key is not written back" 'false' "$(run 'S.serialise({duration: 4
 check "the level index of the bottom level is zero" '0' "$(run 'S.durationLevelIndex(10)')"
 check "the level index of the top level is four" '4' "$(run 'S.durationLevelIndex(60)')"
 check "the level index snaps like the value does" '2' "$(run 'S.durationLevelIndex(36)')"
-# The default is the middle level, which is the middle of the slider too.
-check "the default speed is the middle level" '35' "$(run 'S.DEFAULTS.speed')"
-check "which sits in the middle of the speed slider" '2' "$(run 'S.speedLevelIndex(S.DEFAULTS.speed)')"
-check "an unreadable value indexes as the default level" '2' "$(run 'S.durationLevelIndex("soon")')"
+# The default is the second notch: slower than the middle, not the slowest.
+check "the default speed is the second notch" '48' "$(run 'S.DEFAULTS.speed')"
+check "which sits one step left of the middle of the speed slider" '1' "$(run 'S.speedLevelIndex(S.DEFAULTS.speed)')"
+check "an unreadable value indexes as the default level" '3' "$(run 'S.durationLevelIndex("soon")')"
 
 # The SPEED control walks the levels backwards, because a short loop is the fast
 # one: 0 is the slowest (60 s) and the last index is the fastest (10 s).
@@ -66,7 +70,7 @@ check "the slowest speed is the longest duration" '60' "$(run 'S.durationForSpee
 check "the fastest speed is the shortest duration" '10' "$(run 'S.durationForSpeedIndex(4)')"
 check "a speed index above the range clamps to the fastest" '10' "$(run 'S.durationForSpeedIndex(9)')"
 check "a speed index below the range clamps to the slowest" '60' "$(run 'S.durationForSpeedIndex(-3)')"
-check "a nonsense speed index falls back to the default" '35' "$(run 'S.durationForSpeedIndex("quick")')"
+check "a nonsense speed index falls back to the default" '48' "$(run 'S.durationForSpeedIndex("quick")')"
 check "speed and duration round-trip through every level" 'true' \
   "$(run 'S.DURATION_LEVELS.every(function(d){return S.durationForSpeedIndex(S.speedLevelIndex(d)) === d})')"
 check "one step of speed is one level shorter" 'true' \
@@ -80,9 +84,9 @@ check "a zoom nearer the next level snaps up" '1.15' "$(run 'S.sanitize({maxZoom
 check "the zoom limits are the level ends" '1.1,1.3' "$(run '[S.LIMITS.maxZoom.min,S.LIMITS.maxZoom.max].join(",")')"
 check "every zoom level survives sanitising" '1.1,1.15,1.2,1.25,1.3' \
   "$(run 'S.MAXZOOM_LEVELS.map(function(z){return S.sanitize({maxZoom: z}).maxZoom}).join(",")')"
-check "the zoom level index of the default is one" '1' "$(run 'S.maxZoomLevelIndex(1.15)')"
+check "the zoom level index of the default is the middle" '2' "$(run 'S.maxZoomLevelIndex(S.DEFAULTS.maxZoom)')"
 check "the zoom level index of the top level is four" '4' "$(run 'S.maxZoomLevelIndex(1.3)')"
-check "an unreadable zoom indexes as the default" '1' "$(run 'S.maxZoomLevelIndex("lots")')"
+check "an unreadable zoom indexes as the default" '2' "$(run 'S.maxZoomLevelIndex("lots")')"
 
 # ------------------------------------------------------------------ direction
 # Removed in 3.2: with a symmetric loop, "in" and "out" are the same oscillation
@@ -100,10 +104,10 @@ check "boolean strings are read" 'true' "$(run 'S.bool("true", false)')"
 check "false strings are read" 'false' "$(run 'S.bool("false", true)')"
 check "a number is not a boolean" 'true' "$(run 'S.bool(1, true)')"
 check "unreadable enabled keeps its default" 'true' "$(run 'S.sanitize({enabled: "yes"}).enabled')"
-check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, speed: 35})')"
+check "unknown keys are dropped" "$DEFAULT" "$(run 'S.sanitize({nonsense: 1, speed: 48})')"
 check "garbage text parses to the defaults" "$DEFAULT" "$(run 'S.parse("not json at all")')"
 check "null parses to the defaults" "$DEFAULT" "$(run 'S.parse(null)')"
-check "an old v2 file keeps only what still exists" '{"enabled":true,"speed":35,"maxZoom":1.25,"drift":"center","wander":false,"advance":false}' \
+check "an old v2 file keeps only what still exists" '{"enabled":true,"speed":35,"maxZoom":1.25,"drift":"center","wander":true,"advance":true,"trail":true,"trailLag":0.03}' \
   "$(run 'S.sanitize({preset: "custom", enabled: true, duration: 35, maxZoom: 1.25, direction: "out", smoothEasing: true, handheld: true, breathing: true})')"
 
 # ------------------------------------------------------------------- drift
@@ -132,24 +136,24 @@ check "an old file's driftLength is dropped" 'false' "$(run 'Object.keys(S.sanit
 check "there are no driftLength limits left" 'undefined' "$(run 'typeof S.LIMITS.driftLength')"
 
 # --------------------------------------------------------------- serialising
-check "serialise round-trips canonically" '{"enabled":true,"speed":23,"maxZoom":1.25,"drift":"upLeft","wander":false,"advance":false}' \
+check "serialise round-trips canonically" '{"enabled":true,"speed":23,"maxZoom":1.25,"drift":"upLeft","wander":true,"advance":true,"trail":true,"trailLag":0.03}' \
   "$(run 'JSON.parse(S.serialise({speed: 23, maxZoom: 1.25, drift: "upLeft"}))')"
 check "serialise never writes a removed key" 'false' \
-  "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode","direction","driftLength","duration","trace","atmosphere"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
+  "$(run '["preset","handheld","breathing","smoothEasing","pauseAtEnd","mode","direction","driftLength","duration","trace","atmosphere","overlay","overlayOpacity"].some(function(k){return S.serialise(S.DEFAULTS).indexOf("\""+k+"\"") >= 0})')"
 
 # The panel's unsaved-changes flag is `serialise(draft) != serialise(applied)`,
 # so equality has to be canonical or the warning lights up on an untouched panel.
-check "equal configs compare equal" 'true' "$(run 'S.serialise({speed: 35}) === S.serialise(S.DEFAULTS)')"
+check "equal configs compare equal" 'true' "$(run 'S.serialise({speed: 48}) === S.serialise(S.DEFAULTS)')"
 check "a numeric string is not a change" 'true' "$(run 'S.serialise({speed: "23"}) === S.serialise({speed: 23})')"
 check "key order is not a change" 'true' "$(run 'S.serialise({drift: "up", speed: 23}) === S.serialise({speed: 23, drift: "up"})')"
 check "a real change is detected" 'false' "$(run 'S.serialise({speed: 35}) === S.serialise({speed: 23})')"
 check "flipping the drift is a change" 'false' "$(run 'S.serialise({drift: "left"}) === S.serialise({drift: "right"})')"
 
 # --------------------------------------------------------------------- wander
-check "wander defaults to off" 'false' "$(run 'S.sanitize({}).wander')"
+check "wander defaults to on" 'true' "$(run 'S.sanitize({}).wander')"
 check "wander reads a boolean" 'true' "$(run 'S.sanitize({wander: true}).wander')"
 check "wander reads a true string" 'true' "$(run 'S.sanitize({wander: "true"}).wander')"
-check "an unreadable wander falls back to off" 'false' "$(run 'S.sanitize({wander: "maybe"}).wander')"
+check "an unreadable wander falls back to on" 'true' "$(run 'S.sanitize({wander: "maybe"}).wander')"
 check "pickWanderDrift never returns the current heading" 'true' \
   "$(run 'S.DRIFTS.every(function(d){var seen={};for(var i=0;i<40;i++){var n=S.pickWanderDrift(d);if(n===d)return false;seen[n]=true}return Object.keys(seen).length>=1})')"
 check "pickWanderDrift only returns compass points" 'true' \
@@ -161,9 +165,31 @@ check "atmosphere is gone from the schema" 'undefined' "$(run 'typeof S.sanitize
 check "an old file's atmosphere is dropped" 'false' "$(run 'Object.keys(S.sanitize({atmosphere: true})).indexOf("atmosphere") >= 0')"
 
 # ------------------------------------------------------------------- advance
-check "advance defaults to off" 'false' "$(run 'S.sanitize({}).advance')"
+check "advance defaults to on" 'true' "$(run 'S.sanitize({}).advance')"
 check "advance reads a boolean" 'true' "$(run 'S.sanitize({advance: true}).advance')"
-check "an unreadable advance stays off" 'false' "$(run 'S.sanitize({advance: "next"}).advance')"
+check "an unreadable advance stays on" 'true' "$(run 'S.sanitize({advance: "next"}).advance')"
+
+# ---------------------------------------------------------------------- trail
+# Lagged copies along the Ken Burns path. Five lag lengths as fractions of
+# one loop, defaulting to the second notch.
+check "trail defaults to on" 'true' "$(run 'S.sanitize({}).trail')"
+check "trail reads a boolean" 'true' "$(run 'S.sanitize({trail: true}).trail')"
+check "an unreadable trail stays on" 'true' "$(run 'S.sanitize({trail: "soft"}).trail')"
+check "overlay is gone from the schema" 'undefined' "$(run 'typeof S.sanitize({overlay: true}).overlay')"
+check "an old file's overlay keys are dropped" 'false' \
+  "$(run 'Object.keys(S.sanitize({overlay: true, overlayOpacity: 0.9})).indexOf("overlay") >= 0')"
+check "overlay on migrates to trail on" 'true' "$(run 'S.sanitize({overlay: true}).trail')"
+check "overlay opacity migrates to the matching trail lag" '0.06' \
+  "$(run 'S.sanitize({overlay: true, overlayOpacity: 0.8}).trailLag')"
+check "there are five trail lag levels" '0.015,0.03,0.045,0.06,0.08' "$(run 'S.TRAIL_LAG_LEVELS.join(",")')"
+check "trail lag defaults to the second notch" '0.03' "$(run 'S.sanitize({}).trailLag')"
+check "the default trail lag sits on the second notch" '1' "$(run 'S.trailLagLevelIndex(S.DEFAULTS.trailLag)')"
+check "a trail lag above the top level clamps to it" '0.08' "$(run 'S.sanitize({trailLag: 9}).trailLag')"
+check "a trail lag below the bottom level clamps to it" '0.015' "$(run 'S.sanitize({trailLag: 0.001}).trailLag')"
+check "a value nearer the next trail lag snaps up" '0.06' "$(run 'S.sanitize({trailLag: 0.055}).trailLag')"
+check "an unreadable trail lag falls back to the default" '0.03' "$(run 'S.sanitize({trailLag: "long"}).trailLag')"
+check "every trail lag level survives sanitising" '0.015,0.03,0.045,0.06,0.08' \
+  "$(run 'S.TRAIL_LAG_LEVELS.map(function(l){return S.sanitize({trailLag: l}).trailLag}).join(",")')"
 
 # -------------------------------------------------------------- trace (tests)
 check "trace is not a schema key" 'undefined' "$(run 'typeof S.sanitize({trace: true}).trace')"

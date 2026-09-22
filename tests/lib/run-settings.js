@@ -17,7 +17,7 @@ if (!expression) {
   process.exit(2);
 }
 
-const sourcePath = path.join(__dirname, "..", "..", "Settings.js");
+const sourcePath = path.join(__dirname, "..", "..", "KenBurnsSettings.js");
 const src = fs.readFileSync(sourcePath, "utf8").replace(/^\.pragma library\s*$/m, "");
 const names = [...src.matchAll(/^(?:function|var)\s+([A-Za-z_$][\w$]*)/gm)].map(m => m[1]);
 

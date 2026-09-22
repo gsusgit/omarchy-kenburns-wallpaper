@@ -12,7 +12,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 SETTINGS="$HOME/.config/omarchy/kenburnswallpaper.json"
-DEFAULT='{"enabled":true,"speed":35,"maxZoom":1.15,"drift":"center","wander":false,"advance":false}'
+DEFAULT='{"enabled":true,"speed":48,"maxZoom":1.2,"drift":"center","wander":true,"advance":true,"trail":true,"trailLag":0.03}'
 
 fails=0
 check() { # check <description> <expected> <actual>
@@ -82,7 +82,7 @@ sleep 2
 check "status starts at the defaults" "$DEFAULT" "$(ipc status)"
 
 echo "-- the file holds exactly the schema"
-check "the key set is closed" 'advance,drift,enabled,maxZoom,speed,wander' \
+check "the key set is closed" 'advance,drift,enabled,maxZoom,speed,trail,trailLag,wander' \
   "$(python3 -c "import json;print(','.join(sorted(json.load(open('$SETTINGS')).keys())))")"
 check "pauseAtEnd is not in the file" "keyerror" "$(disk pauseAtEnd 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
 check "mode is not in the file" "keyerror" "$(disk mode 2>&1 | grep -o 'KeyError' | tr 'A-Z' 'a-z')"
