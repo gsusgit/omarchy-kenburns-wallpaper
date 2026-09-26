@@ -49,6 +49,23 @@ Item {
   // remaps the bar panel mid-interaction. Omarchy's own stateful plugins keep
   // their config outside too (omarchy-lock-style -> ~/.config/omarchy/lock-style.json).
   readonly property string settingsPath: Quickshell.env("HOME") + "/.config/omarchy/kenburnswallpaper.json"
+  readonly property string settingsDir: {
+    var p = root.settingsPath
+    var i = p.lastIndexOf("/")
+    return i >= 0 ? p.substring(0, i) : ""
+  }
+  readonly property string settingsBaseName: {
+    var p = root.settingsPath
+    var i = p.lastIndexOf("/")
+    return i >= 0 ? p.substring(i + 1) : p
+  }
+  function localPath(url) {
+    var s = url.toString()
+    if (s.indexOf("file://") === 0)
+      return decodeURIComponent(s.substring(7))
+    return s
+  }
+  readonly property string settingsStorePy: root.localPath(Qt.resolvedUrl("SettingsStore.py"))
 
   // ------------------------------------------------------- user configuration
   // The settings file is the single source of truth; Settings.js clamps
@@ -83,32 +100,95 @@ Item {
     if (root.wantsTrace(rawText)) root.startTrace()
   }
 
-  // Writing goes through a Process, not through FileView.setText.
-  //
-  // Measured behaviour of the FileView route: once the file has been modified
-  // externally, the view stops persisting writes entirely -- a save right after
-  // any external edit never lands, whatever the delay (tested up to 4 s), the
-  // on-disk file keeps the stale content, and nothing is logged because
-  // printErrors is off. That is a silent "I changed a control and it did
-  // nothing". A one-shot writer is boring and always works.
+  // Settings I/O goes through SettingsStore.py (bounded no-follow read, exclusive
+  // temp + rename write), not FileView or shell redirection -- see marketplace
+  // review on #8229.
   //
   // The JSON travels as an argv entry (Quickshell passes `command` as a real
-  // argv, so quotes and braces are safe), and the write is atomic: temp file in
-  // the same directory, then rename over the target.
+  // argv, so quotes and braces are safe).
   // The config this write will carry, captured when save() fires. The command reads
   // this plain string instead of binding to root.config: a binding would let the
   // argv change under a write that is already running, so the file could receive a
   // config nobody asked to save at that moment.
   property string pendingWrite: ""
+  property int configLoadGeneration: 0
+
+  function reloadConfig() {
+    reloadConfigDebounce.restart()
+  }
+
+  function reloadConfigNow() {
+    root.configLoadGeneration++
+    settingsReader.loadGeneration = root.configLoadGeneration
+    settingsReader.readBody = ""
+    settingsReader.running = false
+    settingsReader.running = true
+    readWatchdog.restart()
+  }
+
+  Timer {
+    id: reloadConfigDebounce
+    interval: 250
+    repeat: false
+    onTriggered: root.reloadConfigNow()
+  }
+
+  Process {
+    id: settingsReader
+    property int loadGeneration: 0
+    property string readBody: ""
+    command: ["python3", root.settingsStorePy, "read", root.settingsPath]
+    stdout: StdioCollector {
+      onStreamFinished: settingsReader.readBody = String(text || "")
+    }
+    onExited: function(code) {
+      readWatchdog.stop()
+      if (settingsReader.loadGeneration !== root.configLoadGeneration)
+        return
+      if (code === 0) {
+        root.applyConfig(settingsReader.readBody)
+      } else if (code === 2) {
+        root.applyConfig("")
+        root.save()
+      } else {
+        console.warn("[kenburnswallpaper] " + root.settingsPath
+                     + " unreadable (SettingsStore exit " + code + "), using defaults")
+        root.applyConfig("")
+      }
+    }
+  }
+
+  Timer {
+    id: readWatchdog
+    interval: 5000
+    repeat: false
+    onTriggered: {
+      if (settingsReader.running) {
+        console.warn("[kenburnswallpaper] settings read timed out")
+        settingsReader.running = false
+      }
+    }
+  }
 
   Process {
     id: settingsWriter
-    command: ["sh", "-c",
-      'umask 077; tmp="$1.tmp.$$"; trap \'rm -f "$tmp"\' EXIT; printf \'%s\\n\' "$2" > "$tmp" && mv -f "$tmp" "$1"',
-      "sh", root.settingsPath, root.pendingWrite]
+    command: ["python3", root.settingsStorePy, "write", root.settingsPath, root.pendingWrite]
     onExited: function(code) {
+      writeWatchdog.stop()
       if (code !== 0)
         console.warn("[kenburnswallpaper] settings write failed, exit " + code)
+    }
+  }
+
+  Timer {
+    id: writeWatchdog
+    interval: 5000
+    repeat: false
+    onTriggered: {
+      if (settingsWriter.running) {
+        console.warn("[kenburnswallpaper] settings write timed out")
+        settingsWriter.running = false
+      }
     }
   }
 
@@ -116,6 +196,7 @@ Item {
     root.pendingWrite = Settings.serialise(root.config)
     settingsWriter.running = false      // a newer save supersedes one in flight
     settingsWriter.running = true
+    writeWatchdog.restart()
   }
 
   function set(key, value) {
@@ -146,6 +227,7 @@ Item {
     root.pendingWrite = JSON.stringify(next, null, 2) + "\n"
     settingsWriter.running = false
     settingsWriter.running = true
+    writeWatchdog.restart()
   }
 
   function snapPanToLive() {
@@ -236,21 +318,28 @@ Item {
     }
   }
 
-  FileView {
-    id: configFile
-    path: root.settingsPath
-    watchChanges: true
-    printErrors: false
-    onLoaded: root.applyConfig(text())
-    onLoadFailed: function(error) {
-      // First run (no file yet) and unreadable files land here. Fall back to the
-      // defaults AND write them out, so the file exists for the next boot and a
-      // hand-edited file can always be inspected to see the canonical shape.
-      console.warn("[kenburnswallpaper] " + root.settingsPath + " unreadable, using defaults: " + error)
-      root.applyConfig("")
-      root.save()
+  Process {
+    id: settingsWatcher
+    command: ["inotifywait", "-m", "-q", "-e", "close_write,moved_to,delete",
+              root.settingsDir]
+    stdout: SplitParser {
+      onRead: function(line) {
+        if (line.indexOf(root.settingsBaseName) >= 0)
+          root.reloadConfig()
+      }
     }
-    onFileChanged: reload()
+    onExited: {
+      console.warn("[kenburnswallpaper] settings inotifywait exited; relying on 2 s poll")
+      settingsPoll.running = true
+    }
+  }
+
+  Timer {
+    id: settingsPoll
+    interval: 2000
+    running: false
+    repeat: true
+    onTriggered: root.reloadConfig()
   }
 
   // A bounded trace of the pose. Off unless KENBURNS_TRACE=1 or the settings
@@ -620,8 +709,10 @@ Item {
     root.snapPanToLive()
     refresh()
     watcher.running = true
-    // Do not log config here: FileView has not read the file yet, so it would
-    // print the defaults. applyConfig logs the real file a moment later.
+    root.reloadConfigNow()
+    settingsWatcher.running = true
+    // Do not log config here: SettingsStore has not read the file yet, so it
+    // would print the defaults. applyConfig logs the real file a moment later.
   }
 
   Variants {

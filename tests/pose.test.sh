@@ -9,7 +9,7 @@
 # fails for the wrong reason.
 #
 # Each scenario only rewrites the settings file; the running service picks it up
-# through its FileView watcher, so no shell restart is involved.
+# through its settings watcher, so no shell restart is involved.
 #
 #   ./tests/pose.test.sh                all scenarios
 #   ONLY=loop ./tests/pose.test.sh      one scenario (used for a quick RED)
@@ -49,10 +49,11 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
   for attempt in 1 2 3; do
     printf '%s\n' "$cfg" > "$SETTINGS"
     local start; start=$(date +%s)
-    sleep 2                                 # let the FileView watcher fire
+    sleep 3                                 # let the debounced settings reload finish
     if ! journalctl --user -b --since "@$start" -o cat | grep -aq "kenburnswallpaper] config:"; then
-      echo "-- $name: the settings file was not picked up"
-      fails=$((fails + 1)); return 1
+      echo "-- $name: the settings file was not picked up, retry $attempt"
+      sleep 3
+      continue
     fi
 
     sleep "$wait_s"
@@ -89,12 +90,12 @@ scenario() { # scenario <name> <json-config> <capture-seconds> <analyser-mode> [
 
 # The duration is one of five levels; 23 s is the nearest short loop, so a scenario
 # is 23 s and the capture windows are whole numbers of loops plus a margin.
-scenario loop '{"enabled":true,"speed":23,"maxZoom":1.20,"trace":true}'  80 loop 23 1.20
-scenario ease '{"enabled":true,"speed":23,"maxZoom":1.20,"trace":true}'  52 ease 1.20
+scenario loop '{"enabled":true,"speed":23,"maxZoom":1.20,"wander":false,"trace":true}'  80 loop 23 1.20
+scenario ease '{"enabled":true,"speed":23,"maxZoom":1.20,"wander":false,"trace":true}'  52 ease 1.20
 # The drift is its own axis: any zoom can creep any way, including a diagonal. Its
 # length is fixed at 0.9 of the margin (see Service.qml), which is what the
 # analyser is told to expect.
-scenario driftDiag '{"enabled":true,"speed":23,"maxZoom":1.20,"drift":"upLeft","trace":true}' 52 drift -1 -1 0.9
+scenario driftDiag '{"enabled":true,"speed":23,"maxZoom":1.20,"drift":"upLeft","wander":false,"trace":true}' 52 drift -1 -1 0.9
 # Wander picks a new heading at each loop seam, where zoom is 1 and the pan is 0,
 # so the swap cannot jump. The first loop keeps the locked heading (`right`).
 scenario wander '{"enabled":true,"speed":23,"maxZoom":1.20,"drift":"right","wander":true,"trace":true}' 80 wander

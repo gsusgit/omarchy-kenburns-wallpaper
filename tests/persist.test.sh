@@ -1,6 +1,6 @@
 #!/bin/bash
 # End-to-end persistence tests (v3.0 schema): IPC write -> the settings file on
-# disk -> the service's own FileView reload -> the engine's config.
+# disk -> the service's SettingsStore reload -> the engine's config.
 #
 # This is the only honest way to test persistence without a mouse: the IPC
 # handler and the menu call the exact same service.save()/set() pair, so a round

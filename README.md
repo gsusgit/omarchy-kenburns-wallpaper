@@ -144,7 +144,7 @@ icon to toggle the animation.
 
 ## Releases
 
-Tagged GitHub releases match `version` in `manifest.json`. This tree is **v5.1.0**:
+Tagged GitHub releases match `version` in `manifest.json`. This tree is **v5.1.1**:
 the plugin id, install folder, settings path, and IPC target are
 `io.github.gsusgit.kenburnswallpaper` / `kenburnswallpaper`.
 
