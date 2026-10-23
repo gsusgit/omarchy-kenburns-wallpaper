@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import qs.Commons
 import qs.Ui
+import "KenBurnsSettings.js" as Settings
 
 // Bar entry point for Ken Burns Wallpaper.
 //
@@ -14,9 +15,21 @@ BarWidget {
   id: root
   moduleName: "io.github.gsusgit.kenburnswallpaper"
 
-  // The plugin is also a service (kind "service"); the shell keeps one instance
-  // of it and the widget reads its live state from here.
-  readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
+  // Own facade: serviceFor(moduleName) is this plugin's service. Inside the
+  // tray the facade is the tray's, that lookup is null, and hostedService is
+  // the same singleton the shell loaded.
+  property var hostedService: null
+  property var unwatchService: null
+  readonly property var service: {
+    var found = bar && bar.shell && typeof bar.shell.serviceFor === "function"
+      ? bar.shell.serviceFor(moduleName) : null
+    return found || hostedService
+  }
+
+  Component.onCompleted: {
+    root.unwatchService = Settings.watchService(function(next) { root.hostedService = next })
+  }
+  Component.onDestruction: Settings.unwatchService(root.unwatchService)
   // On only when the layer would map. enabled=true with mode=image, or
   // mode=kenburns with the switch off, both show as off.
   readonly property bool animating: service

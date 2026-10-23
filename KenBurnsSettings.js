@@ -277,3 +277,43 @@ function wantsTrace(text) {
     return false
   }
 }
+
+// The shell keeps one Service.qml. A bar button asks bar.shell.serviceFor for
+// it, and that call only succeeds on the button's own facade. Inside another
+// plugin's tray the facade belongs to the tray, the lookup returns null, and
+// the panel would keep the default (enabled) and refuse to write. The service
+// publishes itself here; the button uses this when the facade lookup is empty.
+var liveService = null
+var serviceWatchers = []
+
+function notifyService() {
+  var i
+  for (i = 0; i < serviceWatchers.length; i++)
+    serviceWatchers[i].callback(liveService)
+}
+
+function attachService(service) {
+  liveService = service || null
+  notifyService()
+}
+
+function detachService(service) {
+  if (liveService !== service) return
+  liveService = null
+  notifyService()
+}
+
+function watchService(callback) {
+  var entry = { callback: callback }
+  serviceWatchers.push(entry)
+  if (liveService) callback(liveService)
+  return entry
+}
+
+function unwatchService(entry) {
+  if (!entry) return
+  var i
+  for (i = serviceWatchers.length - 1; i >= 0; i--) {
+    if (serviceWatchers[i] === entry) serviceWatchers.splice(i, 1)
+  }
+}
