@@ -62,14 +62,12 @@ Panel {
     var wasOn = root.service.config.enabled === true
     var nowOn = clean.enabled === true
     root.service.config = clean
-    root.service.save()
-    // The header switch writes config directly, not via setEnabled. That is the
-    // user path: off means image. A JSON reload from another mode never gets here.
+    // Latch off before save(), so a reload of the previous enabled=true cannot
+    // turn the header switch back on. The header writes config directly, not
+    // via setEnabled. A JSON reload from another mode never gets here.
     if (wasOn !== nowOn)
-      Quickshell.execDetached([
-        Quickshell.env("HOME") + "/.local/bin/omarchy-wallpaper-mode",
-        "set", nowOn ? "kenburns" : "image"
-      ])
+      root.service.userSetEnabled(nowOn)
+    root.service.save()
   }
 
   function editAll(next) {
