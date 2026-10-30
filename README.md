@@ -142,9 +142,16 @@ omarchy-shell shell hide io.github.gsusgit.kenburnswallpaper
 Hover the bar icon for `Ken Burns - ON` or `Ken Burns - OFF`. Right-click the
 icon to toggle the animation.
 
+## Known issues
+
+- Cycle uses Omarchy's `omarchy-theme-bg-next`. If
+  `~/.config/omarchy/backgrounds/<theme>` is a symlink to the theme's own
+  `backgrounds/` folder, that command never finds the current wallpaper and
+  always goes back to the first one. Use a real folder there (Omarchy's default).
+
 ## Releases
 
-Tagged GitHub releases match `version` in `manifest.json`. This tree is **v5.1.2**:
+Tagged GitHub releases match `version` in `manifest.json`. See [CHANGELOG.md](CHANGELOG.md) for every release. This tree is **v5.1.3**:
 the plugin id, install folder, settings path, and IPC target are
 `io.github.gsusgit.kenburnswallpaper` / `kenburnswallpaper`.
 

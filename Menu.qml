@@ -30,15 +30,7 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
 
-  // Same lookup as the bar button. The tray's facade cannot see this service,
-  // so hostedService is the singleton Service.qml published.
-  property var hostedService: null
-  property var unwatchService: null
-  readonly property var service: {
-    var found = bar && bar.shell && typeof bar.shell.serviceFor === "function"
-      ? bar.shell.serviceFor(moduleName) : null
-    return found || hostedService
-  }
+  readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
   readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
 
   // Mirror of the service config, so the controls have a stable object to bind
@@ -67,14 +59,7 @@ Panel {
     if (!root.service) return
     var clean = Settings.sanitize(next)
     if (Settings.serialise(clean) === Settings.serialise(root.service.config)) return
-    var wasOn = root.service.config.enabled === true
-    var nowOn = clean.enabled === true
     root.service.config = clean
-    // Latch off before save(), so a reload of the previous enabled=true cannot
-    // turn the header switch back on. The header writes config directly, not
-    // via setEnabled. A JSON reload from another mode never gets here.
-    if (wasOn !== nowOn)
-      root.service.userSetEnabled(nowOn)
     root.service.save()
   }
 
@@ -104,11 +89,7 @@ Panel {
   }
 
   onServiceChanged: root.loadDraft()
-  Component.onCompleted: {
-    root.unwatchService = Settings.watchService(function(next) { root.hostedService = next })
-    root.loadDraft()
-  }
-  Component.onDestruction: Settings.unwatchService(root.unwatchService)
+  Component.onCompleted: root.loadDraft()
 
   Connections {
     target: root.service
