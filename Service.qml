@@ -73,12 +73,6 @@ Item {
   property var config: Settings.sanitize({})
   property bool enabled: true                  // mirrors config.enabled
   property string wallpaperMode: ""
-  // User off must win over a kenburns mode file. A read that started before
-  // the switch flipped, or a mode file left at kenburns while enabled is
-  // false, used to write enabled=true again and the bar came back on.
-  property bool holdOff: false
-  property bool modeRepairQueued: false
-  property bool modeRefreshPending: false
   readonly property string modeBin: Quickshell.env("HOME") + "/.local/bin/omarchy-wallpaper-mode"
   property bool configReady: false
   property real appliedSpeed: -1
@@ -99,20 +93,6 @@ Item {
 
   function applyConfig(rawText) {
     var parsed = Settings.parse(rawText)
-    // A stale read still says enabled=true after the user turned the switch
-    // off. Keep the off state and write it back; do not let that read turn
-    // the plugin on.
-    if (root.holdOff && parsed.enabled === true) {
-      parsed.enabled = false
-      root.config = parsed
-      root.configReady = true
-      console.log("[kenburnswallpaper] config: " + JSON.stringify(parsed) + " (held off)")
-      root.save()
-      root.repairModeIfOff()
-      return
-    }
-    if (parsed.enabled !== true)
-      root.holdOff = false
     var same = root.configReady && Settings.serialise(parsed) === Settings.serialise(root.config)
     if (!same) {
       root.config = parsed
@@ -120,7 +100,6 @@ Item {
     }
     console.log("[kenburnswallpaper] config: " + JSON.stringify(parsed))
     if (root.wantsTrace(rawText)) root.startTrace()
-    root.repairModeIfOff()
   }
 
   // Settings I/O goes through SettingsStore.py (bounded no-follow read, exclusive
@@ -170,11 +149,6 @@ Item {
         return
       if (code === 0) {
         root.applyConfig(settingsReader.readBody)
-      } else if (root.configReady) {
-        // Defaults set enabled=true. Applying them over a config we already
-        // loaded turns the switch back on when a read races the rename.
-        console.warn("[kenburnswallpaper] " + root.settingsPath
-                     + " unreadable (SettingsStore exit " + code + "), keeping current config")
       } else if (code === 2) {
         root.applyConfig("")
         root.save()
@@ -235,40 +209,18 @@ Item {
     root.config = Settings.sanitize(next)
     // User toggle (bar / IPC). A JSON write from another mode must not come
     // through here, or turning Ken Burns off would stamp mode=image on top of logomarchy.
-    if (key !== "enabled") return
-    if (root.config.enabled === true)
-      root.userSetEnabled(true)
-    else if (wasOn)
-      root.userSetEnabled(false)
+    if (key === "enabled" && (root.config.enabled === true) !== wasOn)
+      root.noteEnabledByUser(root.config.enabled === true)
   }
 
   function noteEnabledByUser(on) {
     Quickshell.execDetached([root.modeBin, "set", on ? "kenburns" : "image"])
   }
 
-  // Off latches holdOff before the mode file is written, so a kenburns mode
-  // left behind cannot be read back as "turn the plugin on".
-  function userSetEnabled(on) {
-    root.holdOff = on !== true
-    root.noteEnabledByUser(on === true)
-  }
-
-  // enabled=false is the switch. A mode file that still says kenburns is the
-  // pair that maps the layer again; point the mode at image and do not set
-  // enabled back to true.
-  function repairModeIfOff() {
-    if (root.modeRepairQueued) return
-    if (!root.configReady || root.config.enabled === true) return
-    if (root.wallpaperMode !== "kenburns") return
-    root.modeRepairQueued = true
-    root.noteEnabledByUser(false)
-  }
-
   // Keep in sync with defaults.json (checked in tests/settings.test.sh).
   // Literal assignment + direct JSON write: a stale Settings.js cache cannot
   // turn switches off again when save() would have re-sanitised through it.
   function resetDefaults() {
-    root.holdOff = false
     var next = {
       enabled: true,
       speed: 48,
@@ -378,42 +330,15 @@ Item {
     }
   }
 
-  function eventFileName(line) {
-    var parts = String(line || "").trim().split(/\s+/)
-    return parts.length ? parts[parts.length - 1] : ""
-  }
-
   function refreshWallpaperMode() {
-    if (modeReader.running) {
-      root.modeRefreshPending = true
-      return
-    }
-    modeReader.running = true
-  }
-
-  // Expression form, same as the other StdioCollector handlers: a block does
-  // not see the collector's `text` here, so the mode read came back empty and
-  // a leftover kenburns file was never repaired.
-  function acceptWallpaperMode(raw) {
-    var mode = String(raw || "").trim()
-    root.wallpaperMode = mode
-    root.modeRepairQueued = false
-    root.repairModeIfOff()
+    if (!modeReader.running) modeReader.running = true
   }
 
   Process {
     id: modeReader
     command: [root.modeBin, "get"]
     stdout: StdioCollector {
-      waitForEnd: true
-      onStreamFinished: root.acceptWallpaperMode(text)
-    }
-    onRunningChanged: {
-      if (running) return
-      if (root.modeRefreshPending) {
-        root.modeRefreshPending = false
-        root.refreshWallpaperMode()
-      }
+      onStreamFinished: root.wallpaperMode = String(text || "").trim()
     }
   }
 
@@ -423,14 +348,9 @@ Item {
               root.settingsDir]
     stdout: SplitParser {
       onRead: function(line) {
-        // Exact name: the atomic write's temp file is
-        // "kenburnswallpaper.json.tmp.*" / "wallpaper-mode.json.tmp.*".
-        // Matching the prefix started a read of the old file and then
-        // dropped the rename event, so mode stayed kenburns after off.
-        var name = root.eventFileName(line)
-        if (name === root.settingsBaseName)
+        if (line.indexOf(root.settingsBaseName) >= 0)
           root.reloadConfig()
-        if (name === "wallpaper-mode.json")
+        if (line.indexOf("wallpaper-mode.json") >= 0)
           root.refreshWallpaperMode()
       }
     }

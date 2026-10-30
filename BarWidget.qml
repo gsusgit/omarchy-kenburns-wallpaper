@@ -17,11 +17,7 @@ BarWidget {
   // The plugin is also a service (kind "service"); the shell keeps one instance
   // of it and the widget reads its live state from here.
   readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
-  // On only when the layer would map. enabled=true with mode=image, or
-  // mode=kenburns with the switch off, both show as off.
-  readonly property bool animating: service
-    ? service.enabled === true && service.wallpaperMode === "kenburns"
-    : false
+  readonly property bool animating: service ? service.enabled === true : false
 
   readonly property bool opened: panelLoader.item
     ? panelLoader.item.opened === true
@@ -92,7 +88,7 @@ BarWidget {
         return
       }
       if (buttonCode === Qt.RightButton && root.service) {
-        root.service.set("enabled", !root.animating)
+        root.service.set("enabled", !root.service.enabled)
         root.service.save()
       }
     }
