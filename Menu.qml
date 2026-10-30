@@ -30,15 +30,7 @@ Panel {
   property var anchorItem: null
   property var hostWidget: null
 
-  // Same lookup as the bar button. The tray's facade cannot see this service,
-  // so hostedService is the singleton Service.qml published.
-  property var hostedService: null
-  property var unwatchService: null
-  readonly property var service: {
-    var found = bar && bar.shell && typeof bar.shell.serviceFor === "function"
-      ? bar.shell.serviceFor(moduleName) : null
-    return found || hostedService
-  }
+  readonly property var service: bar && bar.shell ? bar.shell.serviceFor(moduleName) : null
   readonly property string fontFamily: root.bar ? root.bar.fontFamily : Style.font.family
 
   // Mirror of the service config, so the controls have a stable object to bind
@@ -104,11 +96,7 @@ Panel {
   }
 
   onServiceChanged: root.loadDraft()
-  Component.onCompleted: {
-    root.unwatchService = Settings.watchService(function(next) { root.hostedService = next })
-    root.loadDraft()
-  }
-  Component.onDestruction: Settings.unwatchService(root.unwatchService)
+  Component.onCompleted: root.loadDraft()
 
   Connections {
     target: root.service

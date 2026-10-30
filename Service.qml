@@ -812,7 +812,6 @@ Item {
   }
 
   Component.onCompleted: {
-    Settings.attachService(root)
     root.snapPanToLive()
     refresh()
     watcher.running = true
@@ -822,8 +821,6 @@ Item {
     // Do not log config here: SettingsStore has not read the file yet, so it
     // would print the defaults. applyConfig logs the real file a moment later.
   }
-
-  Component.onDestruction: Settings.detachService(root)
 
   Variants {
     model: Quickshell.screens
