@@ -72,8 +72,6 @@ Item {
   // everything, so `config` is always complete and in range whatever is on disk.
   property var config: Settings.sanitize({})
   property bool enabled: true                  // mirrors config.enabled
-  property string wallpaperMode: ""
-  readonly property string modeBin: Quickshell.env("HOME") + "/.local/bin/omarchy-wallpaper-mode"
   property bool configReady: false
   property real appliedSpeed: -1
 
@@ -204,17 +202,8 @@ Item {
   function set(key, value) {
     var next = {}
     for (var k in root.config) next[k] = root.config[k]
-    var wasOn = root.config.enabled === true
     next[key] = value
     root.config = Settings.sanitize(next)
-    // User toggle (bar / IPC). A JSON write from another mode must not come
-    // through here, or turning Ken Burns off would stamp mode=image on top of logomarchy.
-    if (key === "enabled" && (root.config.enabled === true) !== wasOn)
-      root.noteEnabledByUser(root.config.enabled === true)
-  }
-
-  function noteEnabledByUser(on) {
-    Quickshell.execDetached([root.modeBin, "set", on ? "kenburns" : "image"])
   }
 
   // Keep in sync with defaults.json (checked in tests/settings.test.sh).
@@ -239,7 +228,6 @@ Item {
     settingsWriter.running = false
     settingsWriter.running = true
     writeWatchdog.restart()
-    root.noteEnabledByUser(true)
   }
 
   function snapPanToLive() {
@@ -330,18 +318,6 @@ Item {
     }
   }
 
-  function refreshWallpaperMode() {
-    if (!modeReader.running) modeReader.running = true
-  }
-
-  Process {
-    id: modeReader
-    command: [root.modeBin, "get"]
-    stdout: StdioCollector {
-      onStreamFinished: root.wallpaperMode = String(text || "").trim()
-    }
-  }
-
   Process {
     id: settingsWatcher
     command: ["inotifywait", "-m", "-q", "-e", "close_write,moved_to,delete",
@@ -350,8 +326,6 @@ Item {
       onRead: function(line) {
         if (line.indexOf(root.settingsBaseName) >= 0)
           root.reloadConfig()
-        if (line.indexOf("wallpaper-mode.json") >= 0)
-          root.refreshWallpaperMode()
       }
     }
     onExited: {
@@ -663,7 +637,7 @@ Item {
 
   Process {
     id: advanceProc
-    command: [root.modeBin.substring(0, root.modeBin.lastIndexOf("/")) + "/omarchy-theme-bg-next"]
+    command: ["omarchy-theme-bg-next"]
   }
 
   Process {
@@ -737,7 +711,6 @@ Item {
     watcher.running = true
     root.reloadConfigNow()
     settingsWatcher.running = true
-    root.refreshWallpaperMode()
     // Do not log config here: SettingsStore has not read the file yet, so it
     // would print the defaults. applyConfig logs the real file a moment later.
   }
@@ -752,8 +725,7 @@ Item {
       screen: modelData
       color: baseImage.status === Image.Ready ? "black" : "transparent"
       anchors { top: true; bottom: true; left: true; right: true }
-      visible: root.enabled && root.wallpaperMode === "kenburns"
-               && !remapGuard.remapping && !win.covered
+      visible: !remapGuard.remapping && !win.covered
                && !root.sessionLocked && root.screensaverWindowCount === 0
 
       readonly property bool covered: {
