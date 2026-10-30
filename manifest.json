@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "io.github.gsusgit.kenburnswallpaper",
   "name": "Ken Burns Wallpaper",
-  "version": "5.1.1",
+  "version": "5.1.3",
   "author": "gsusgit",
   "license": "MIT",
   "description": "Your wallpaper slowly zooms and drifts, like a documentary still.",
