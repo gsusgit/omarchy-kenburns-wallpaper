@@ -73,6 +73,15 @@ Item {
   property var config: Settings.sanitize({})
   property bool enabled: true                  // mirrors config.enabled
   property string wallpaperMode: ""
+  // Omarchy 4.5 does not ship ~/.local/bin/omarchy-wallpaper-mode. With that
+  // helper missing, the on/off switch owns the layer. An explicit image or
+  // logomarchy mode still keeps it unmapped.
+  property bool modeAbsent: false
+  readonly property bool motionLive: root.enabled === true
+    && (root.modeAbsent || root.wallpaperMode === "kenburns")
+  readonly property string localCycleBin: Quickshell.env("HOME") + "/.local/bin/omarchy-theme-bg-next"
+  readonly property string systemCycleBin: "/usr/bin/omarchy-theme-bg-next"
+  property string cycleBin: "/usr/bin/omarchy-theme-bg-next"
   // User off must win over a kenburns mode file. A read that started before
   // the switch flipped, or a mode file left at kenburns while enabled is
   // false, used to write enabled=true again and the bar came back on.
@@ -243,6 +252,7 @@ Item {
   }
 
   function noteEnabledByUser(on) {
+    if (root.modeAbsent) return
     Quickshell.execDetached([root.modeBin, "set", on ? "kenburns" : "image"])
   }
 
@@ -384,6 +394,7 @@ Item {
   }
 
   function refreshWallpaperMode() {
+    if (root.modeAbsent) return
     if (modeReader.running) {
       root.modeRefreshPending = true
       return
@@ -399,6 +410,30 @@ Item {
     root.wallpaperMode = mode
     root.modeRepairQueued = false
     root.repairModeIfOff()
+  }
+
+  // Probe with /usr/bin/test so a missing helper does not start a process
+  // Quickshell then reports as "binary could not be found".
+  Process {
+    id: modeProbe
+    command: ["/usr/bin/test", "-x", root.modeBin]
+    onExited: function(code) {
+      if (code === 0) {
+        root.modeAbsent = false
+        root.refreshWallpaperMode()
+      } else {
+        root.modeAbsent = true
+        root.wallpaperMode = ""
+      }
+    }
+  }
+
+  Process {
+    id: cycleProbe
+    command: ["/usr/bin/test", "-x", root.localCycleBin]
+    onExited: function(code) {
+      root.cycleBin = code === 0 ? root.localCycleBin : root.systemCycleBin
+    }
   }
 
   Process {
@@ -743,7 +778,7 @@ Item {
 
   Process {
     id: advanceProc
-    command: [root.modeBin.substring(0, root.modeBin.lastIndexOf("/")) + "/omarchy-theme-bg-next"]
+    command: [root.cycleBin]
   }
 
   Process {
@@ -818,7 +853,8 @@ Item {
     watcher.running = true
     root.reloadConfigNow()
     settingsWatcher.running = true
-    root.refreshWallpaperMode()
+    modeProbe.running = true
+    cycleProbe.running = true
     // Do not log config here: SettingsStore has not read the file yet, so it
     // would print the defaults. applyConfig logs the real file a moment later.
   }
@@ -835,7 +871,7 @@ Item {
       screen: modelData
       color: baseImage.status === Image.Ready ? "black" : "transparent"
       anchors { top: true; bottom: true; left: true; right: true }
-      visible: root.enabled && root.wallpaperMode === "kenburns"
+      visible: root.motionLive
                && !remapGuard.remapping && !win.covered
                && !root.sessionLocked && root.screensaverWindowCount === 0
 

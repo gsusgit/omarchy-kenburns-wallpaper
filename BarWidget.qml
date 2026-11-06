@@ -30,11 +30,9 @@ BarWidget {
     root.unwatchService = Settings.watchService(function(next) { root.hostedService = next })
   }
   Component.onDestruction: Settings.unwatchService(root.unwatchService)
-  // On only when the layer would map. enabled=true with mode=image, or
-  // mode=kenburns with the switch off, both show as off.
-  readonly property bool animating: service
-    ? service.enabled === true && service.wallpaperMode === "kenburns"
-    : false
+  // On only when the layer would map. With no wallpaper-mode helper that is
+  // the switch. With a helper, image or logomarchy stays off.
+  readonly property bool animating: service ? service.motionLive === true : false
 
   readonly property bool opened: panelLoader.item
     ? panelLoader.item.opened === true
