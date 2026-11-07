@@ -66,6 +66,7 @@ Item {
     return s
   }
   readonly property string settingsStorePy: root.localPath(Qt.resolvedUrl("SettingsStore.py"))
+  readonly property string cycleNextPy: root.localPath(Qt.resolvedUrl("CycleNext.py"))
 
   // ------------------------------------------------------- user configuration
   // The settings file is the single source of truth; Settings.js clamps
@@ -79,9 +80,6 @@ Item {
   property bool modeAbsent: false
   readonly property bool motionLive: root.enabled === true
     && (root.modeAbsent || root.wallpaperMode === "kenburns")
-  readonly property string localCycleBin: Quickshell.env("HOME") + "/.local/bin/omarchy-theme-bg-next"
-  readonly property string systemCycleBin: "/usr/bin/omarchy-theme-bg-next"
-  property string cycleBin: "/usr/bin/omarchy-theme-bg-next"
   // User off must win over a kenburns mode file. A read that started before
   // the switch flipped, or a mode file left at kenburns while enabled is
   // false, used to write enabled=true again and the bar came back on.
@@ -429,14 +427,6 @@ Item {
   }
 
   Process {
-    id: cycleProbe
-    command: ["/usr/bin/test", "-x", root.localCycleBin]
-    onExited: function(code) {
-      root.cycleBin = code === 0 ? root.localCycleBin : root.systemCycleBin
-    }
-  }
-
-  Process {
     id: modeReader
     command: [root.modeBin, "get"]
     stdout: StdioCollector {
@@ -773,12 +763,20 @@ Item {
     var intoLoop = root.clock % root.cycleMs
     if (root.cycleMs - intoLoop > lead) return
     root.advanceArmedForLoop = root.loopIndex
+    console.log("[kenburnswallpaper] cycle")
     advanceProc.running = true
   }
 
+  // Local wrapper when it exists; otherwise CycleNext.py, because
+  // /usr/bin/omarchy-theme-bg-next exits 0 without changing the picture
+  // when the symlink path is not one of the paths find prints.
   Process {
     id: advanceProc
-    command: [root.cycleBin]
+    command: ["python3", root.cycleNextPy]
+    onExited: function(code) {
+      if (code !== 0)
+        console.warn("[kenburnswallpaper] cycle exit " + code)
+    }
   }
 
   Process {
@@ -854,7 +852,6 @@ Item {
     root.reloadConfigNow()
     settingsWatcher.running = true
     modeProbe.running = true
-    cycleProbe.running = true
     // Do not log config here: SettingsStore has not read the file yet, so it
     // would print the defaults. applyConfig logs the real file a moment later.
   }
